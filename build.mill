@@ -37,11 +37,13 @@ object Deps:
 
 /** One JVM for everything: compiling, testing and `native-image`. */
 object GraalvmWorker extends JvmWorkerModule:
-  def jvmVersion = Task.Input(Versions.graalvm)
+  def jvmVersion = Versions.graalvm
 
 trait NerdFontsModule extends ScalaModule, ScalafmtModule, ScalafixModule:
   def scalaVersion = Versions.scala
   def jvmWorker    = ModuleRef(GraalvmWorker)
+  // `javaHome` derives from this, and NativeImageModule locates `native-image` inside it.
+  def jvmVersion   = Versions.graalvm
 
   def scalacOptions = Seq(
     "-deprecation",

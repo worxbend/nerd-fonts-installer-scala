@@ -1,0 +1,18 @@
+# nerd-fonts-installer configuration.
+# Copy to ~/.config/nerd-fonts-installer/config.yaml (or pass with --config).
+
+# Release to install from: `latest`, or a tag such as `v3.4.0` for reproducible machines.
+release: latest
+
+# Root folder; each family gets its own sub-directory. `~` expands to your home directory.
+destination: ~/.local/share/fonts/NerdFonts
+
+# Run `fc-cache -f <destination>` afterwards (skipped safely when fc-cache is missing).
+refresh_font_cache: true
+
+# Font archive names without `.zip`. `nerd-fonts-installer --font-names` prints the full list.
+families:
+  - JetBrainsMono
+  - Hack
+  - FiraCode
+  - Meslo

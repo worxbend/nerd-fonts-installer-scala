@@ -36,7 +36,7 @@ Behavioural parity targets (must match the Go tool byte-for-byte where output is
 
 | Concern | Choice |
 | --- | --- |
-| Language / build | Scala 3.8.4, Mill 1.1.7 (`./mill`), JVM toolchain `graalvm-community:25.0.1` fetched by Mill; bytecode target 21 |
+| Language / build | Scala 3.8.4, Mill 1.1.7 (`./mill`), JVM toolchain `graalvm-community:25.0.1` fetched by Mill (`jvmVersion` on every module, so `app.nativeImage` finds `native-image` without `GRAALVM_HOME`); bytecode target 21 |
 | Concurrency | Ox 1.0.6 (`Flow.mapParUnordered`, `supervised`, `timeout`, `abandonOnInterruptReads`) — direct style, no Futures |
 | CLI | picocli 4.7.7 (reflection config maintained by hand in `app/resources/META-INF/native-image/...` and asserted by a test) |
 | YAML / JSON | `org.virtuslab::scala-yaml` (AST only) and `ujson` (AST only). No derivation, no reflection |
@@ -270,9 +270,17 @@ Keys are decoded from bytes (`ESC [ A/B/C/D`, `ESC` alone = Escape, `0x03` = Ctr
 
 ## 8. CLI
 
-Single root command `nerd-fonts-installer`, no subcommands, `sortOptions = false`, custom header. `--version`
+Single root command `nerd-fonts-installer`, no subcommands, `sortOptions = false`, custom header.
+`mixinStandardHelpOptions` is **off**: the tool owns `--version` (Go prints its own format, and picocli's mixin
+would clash with an option of the same name — verified: the clash silently drops the mixin and `--help` stops
+working), so declare `-h, --help` explicitly with `usageHelp = true` and `--version` as a plain flag. `--version`
 prints `nerd-fonts-installer <version> (<commit>, <date>)`; commit/date come from `BuildInfo` (populated by
 Mill from `git rev-parse --short=12 HEAD` and `NERD_FONTS_INSTALLER_BUILD_DATE` env or `unknown`).
+
+Picocli binds options through setters, so command classes are the one sanctioned place for `var` fields; annotate
+each such class with `@SuppressWarnings(Array("scalafix:DisableSyntax.var"))` and a one-line reason. Keep the
+mutable surface to the command class: it snapshots its fields into an immutable `CliOptions` value that
+`Application` consumes.
 
 Flow in `Application.run(args)`:
 
