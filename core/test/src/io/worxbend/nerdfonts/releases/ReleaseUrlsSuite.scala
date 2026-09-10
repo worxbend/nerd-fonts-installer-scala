@@ -1,0 +1,65 @@
+package io.worxbend.nerdfonts.releases
+
+import io.worxbend.nerdfonts.fonts.FamilyName
+import io.worxbend.nerdfonts.fonts.ReleaseSelector
+import io.worxbend.nerdfonts.fonts.ReleaseTag
+import io.worxbend.nerdfonts.http.Url
+
+/** The Go `TestReleaseURL` / `TestChecksumURL*` tables, plus the `url.PathEscape` character classes. */
+final class ReleaseUrlsSuite extends munit.FunSuite:
+  private def family(name: String): FamilyName = FamilyName.parse(name).getOrElse(fail(s"unsafe $name"))
+
+  private def tagged(tag: String): ReleaseSelector =
+    ReleaseSelector.Tagged(ReleaseTag.parse(tag).getOrElse(fail(s"blank $tag")))
+
+  test("the latest selector uses the latest/download shape"):
+    assertEquals(
+      ReleaseUrls.download(ReleaseSelector.Latest, family("JetBrainsMono")).value,
+      "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip",
+    )
+
+  test("a tagged selector uses the download/<tag> shape"):
+    assertEquals(
+      ReleaseUrls.download(tagged("v3.4.0"), family("Hack")).value,
+      "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/Hack.zip",
+    )
+
+  test("both path segments are percent-escaped"):
+    assertEquals(
+      ReleaseUrls.download(tagged("release candidate"), family("Symbols Nerd Font")).value,
+      "https://github.com/ryanoasis/nerd-fonts/releases/download/release%20candidate/Symbols%20Nerd%20Font.zip",
+    )
+
+  test("a download URL converts to a request URL with the same text"):
+    val download = ReleaseUrls.download(ReleaseSelector.Latest, family("Hack"))
+    assertEquals(download.url, Url(download.value))
+
+  test("the latest checksum manifest URL"):
+    assertEquals(
+      ReleaseUrls.checksums(ReleaseSelector.Latest),
+      Url("https://github.com/ryanoasis/nerd-fonts/releases/latest/download/SHA-256.txt"),
+    )
+
+  test("a versioned checksum manifest URL"):
+    assertEquals(
+      ReleaseUrls.checksums(tagged("v3.4.0")),
+      Url("https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/SHA-256.txt"),
+    )
+
+  test("the checksum manifest URL escapes the release tag"):
+    assertEquals(
+      ReleaseUrls.checksums(tagged("release candidate")),
+      Url("https://github.com/ryanoasis/nerd-fonts/releases/download/release%20candidate/SHA-256.txt"),
+    )
+
+  test("PathEscape leaves unreserved characters and Go's kept delimiters alone"):
+    assertEquals(PathEscape.escape("AZaz09-_.~$&+:=@"), "AZaz09-_.~$&+:=@")
+
+  test("PathEscape encodes the segment delimiters Go encodes"):
+    assertEquals(PathEscape.escape("a/b;c,d?e"), "a%2Fb%3Bc%2Cd%3Fe")
+
+  test("PathEscape encodes spaces, asterisks and quotes with uppercase hex"):
+    assertEquals(PathEscape.escape("a b*c\"d"), "a%20b%2Ac%22d")
+
+  test("PathEscape encodes non-ASCII text byte by byte as UTF-8"):
+    assertEquals(PathEscape.escape("é"), "%C3%A9")
