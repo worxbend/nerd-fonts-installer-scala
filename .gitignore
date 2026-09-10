@@ -1,0 +1,44 @@
+# Build outputs
+out/
+dist/
+*.class
+*.jar
+native-executable
+
+# Mill / Scala tooling
+.bloop/
+.bsp/
+.metals/
+.scala-build/
+.mill-daemon/
+
+# IDEs and editors
+.idea/
+.vscode/
+*.iml
+*.swp
+*~
+
+# OS files
+.DS_Store
+
+# Logs and diagnostics
+*.log
+hs_err_pid*
+replay_pid*
+
+# Local runtime config
+config.local.yaml
+nerd-fonts-installer.yaml
+nerd-fonts-installer.yml
+nerd-fonts-installer.json
+nerd-fonts-installer.conf
+
+# Release artifacts
+*.tar.gz
+*.sha256
+checksums.txt
+
+# Agent tooling
+.claude/
+.agents/
