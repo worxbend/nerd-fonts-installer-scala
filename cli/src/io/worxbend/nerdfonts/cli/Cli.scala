@@ -23,5 +23,6 @@ final private[cli] class RootCommand(out: PrintWriter) extends java.util.concurr
 
   override def call(): Integer =
     if showVersion then out.println(s"nerd-fonts-installer ${BuildInfo.version}")
-    else out.println(s"nerd-fonts-installer ${BuildInfo.version} (scala ${BuildInfo.scalaVersion})")
+    else
+      out.println(s"nerd-fonts-installer ${BuildInfo.version} (${BuildInfo.commit}, ${BuildInfo.buildDate})")
     Integer.valueOf(0)
