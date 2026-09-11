@@ -424,3 +424,9 @@ one concern per function; scaladoc on public types explains why, not what.
   builds print `dev`/blank outside CI); a `sed` check of `val project = "…"` against the resolved tag, run once
   per matrix leg before the expensive steps, catches a forgotten version bump instead of shipping a binary whose
   `--version` disagrees with the release it ships in.
+- **A pre-release tag never becomes the GitHub "Latest" release.** `gh release create`'s `--latest` defaulted to
+  true regardless of the tag shape, so `v*-rc.*` would outrank the last stable release for `scripts/install.sh`'s
+  default (unpinned) install path. The publish step now passes `--prerelease --latest=false` whenever the tag
+  contains a hyphen (the only shape a pre-release suffix can take under the version regex already enforced in
+  "Resolve version") and `--latest` otherwise, applied on both `gh release create` and `gh release edit` so a
+  re-run cannot leave a release's flags stale.

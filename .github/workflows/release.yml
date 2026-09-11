@@ -178,10 +178,18 @@ jobs:
           TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
         run: |
           set -euo pipefail
+          # A pre-release tag (v1.2.3-rc.1) must never become the repository's Latest release: that is
+          # what scripts/install.sh resolves by default for anyone who has not pinned a version.
+          if [[ "${TAG}" == *-* ]]; then
+            flags=(--prerelease --latest=false)
+          else
+            flags=(--latest)
+          fi
           if gh release view "${TAG}" >/dev/null 2>&1; then
             gh release upload "${TAG}" dist/* --clobber
+            gh release edit "${TAG}" "${flags[@]}"
           else
-            gh release create "${TAG}" dist/* --verify-tag --generate-notes --latest --title "${TAG}"
+            gh release create "${TAG}" dist/* --verify-tag --generate-notes --title "${TAG}" "${flags[@]}"
           fi
 
       - name: Refresh moving latest release
