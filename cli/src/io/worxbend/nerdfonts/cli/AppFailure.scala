@@ -30,7 +30,7 @@ enum AppFailure:
   case Interrupted(phase: InterruptPhase)
 
   def render: String = this match
-    case Config(cause, path)                       => s"load config $path: ${cause.render}"
+    case Config(cause, path)                       => s"load config $path: ${AppFailure.renderAsTyped(cause, path)}"
     case DiscoveredConfig(cause)                   => AppFailure.renderDiscovered(cause)
     case NoConfig(candidates)                      => AppFailure.renderNoConfig(candidates)
     case NotATerminal                              => s"${AppFailure.noConfigFound}; --interactive requires stdin and stdout terminals"
@@ -55,11 +55,20 @@ object AppFailure:
     else s"$noConfigFound; pass --config, set $variable, or create one of: ${candidates.mkString(", ")}"
 
   // A missing working directory has no candidate path to name, and Go returns that error unwrapped.
-  private def renderDiscovered(cause: ConfigError): String = discoveredPath(cause) match
+  private def renderDiscovered(cause: ConfigError): String = configPath(cause) match
     case Some(path) => s"load discovered config $path: ${cause.render}"
     case None       => cause.render
 
-  private def discoveredPath(cause: ConfigError): Option[os.Path] = cause match
+  // `ConfigError.render` always spells the path as the absolute `os.Path` the loader had to read the file
+  // with; an explicit `--config`/`$NERD_FONTS_INSTALLER_CONFIG` value is echoed as typed everywhere else in
+  // the message, so the same absolute spelling is substituted back to `raw` here (Go never absolutises the
+  // path at all, so both the outer wrap and the inner error share the one raw string). A discovered candidate
+  // has no separate raw spelling — it is already the path `renderDiscovered` prints — so this is a no-op there.
+  private def renderAsTyped(cause: ConfigError, raw: String): String = configPath(cause) match
+    case Some(path) => cause.render.replace(path.toString, raw)
+    case None       => cause.render
+
+  private def configPath(cause: ConfigError): Option[os.Path] = cause match
     case ConfigError.NotFound(path)        => Some(path)
     case ConfigError.Unreadable(path, _)   => Some(path)
     case ConfigError.Parse(path, _)        => Some(path)

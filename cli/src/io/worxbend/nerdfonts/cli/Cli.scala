@@ -36,6 +36,10 @@ object Cli:
     commandLine.setErr(err)
     commandLine.setColorScheme(Help.defaultColorScheme(Help.Ansi.OFF))
     commandLine.setStopAtPositional(true)
+    // Go's `flag` package lets a later occurrence of an option silently overwrite an earlier one; picocli's
+    // default is to reject a repeated single-value option (including booleans) with `OverwrittenOptionException`
+    // and exit 2. This opts back into `flag`'s behaviour so the last occurrence wins.
+    commandLine.setOverwrittenOptionsAllowed(true)
     commandLine.getCommandSpec.versionProvider(VersionProvider)
     commandLine.setExecutionStrategy(parseResult => execute(command, parseResult, deps, out, err))
     commandLine
@@ -74,13 +78,17 @@ object Cli:
     result.left.foreach(failure => err.println(failure.render))
     ExitCode.of(result)
 
-  // Go's `os.CreateTemp("", …)` honours `$TMPDIR`; the JDK's `java.io.tmpdir` is fixed at `/tmp` on Linux, so
-  // the variable is consulted first and the property is only the fallback. The composition root is the one
-  // place allowed to read a system property; the path is made absolute in case either value is relative.
+  // Go's `os.CreateTemp("", …)` honours `$TMPDIR`, falling back to `/tmp` on Unix when it is unset; the JDK's
+  // `java.io.tmpdir` is the same `/tmp` on Linux, so it is consulted next and the hard-coded `/tmp` is only a
+  // last resort for a JVM that somehow has neither. Both are read through the `Environment` port (invariant
+  // 7): nothing below the composition root reads `sys.env`/`sys.props`, and this is the composition root
+  // itself. The path is made absolute in case any of the three is relative.
   private[cli] def tempDir(env: Environment): os.Path = env
     .variable(Cli.tempDirVariable)
     .filter(_.nonEmpty)
-    .getOrElse(System.getProperty("java.io.tmpdir"))
+    .orElse(env.property(Cli.tempDirProperty))
+    .getOrElse("/tmp")
     .pipe(raw => os.Path(Path.of(raw).toAbsolutePath))
 
   private val tempDirVariable = "TMPDIR"
+  private val tempDirProperty = "java.io.tmpdir"

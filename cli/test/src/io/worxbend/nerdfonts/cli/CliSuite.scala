@@ -4,6 +4,7 @@ import io.worxbend.nerdfonts.cli.Fakes.*
 import io.worxbend.nerdfonts.config.ConfigError
 import io.worxbend.nerdfonts.config.ConfigLocations
 import io.worxbend.nerdfonts.config.DiscoveredConfig
+import io.worxbend.nerdfonts.environment.EnvironmentError
 import io.worxbend.nerdfonts.environment.PathError
 import io.worxbend.nerdfonts.fonts.ConfigValidationError
 import io.worxbend.nerdfonts.fonts.DryRun
@@ -127,7 +128,24 @@ final class CliSuite extends munit.FunSuite:
     val broken = deps().copy(loadConfig = path => Left(ConfigError.Parse(path, "yaml: boom")))
     val result = run(broken, "--font-names", "--config", "fonts.yaml")
     assertEquals(result.code, 1)
-    assertEquals(result.err, "load config fonts.yaml: parse /workspace/fonts.yaml: yaml: boom\n")
+    assertEquals(result.err, "load config fonts.yaml: parse fonts.yaml: yaml: boom\n")
+
+  test("--font-names with a broken discovered config exits 1 with the load discovered config prefix"):
+    val broken = ConfigError.Invalid(cwd / "nerd-fonts-installer.yaml", ConfigValidationError.NoFamilies)
+    val result = run(deps().copy(discoverConfig = () => Left(broken)), "--font-names")
+    assertEquals(result.code, 1)
+    assertEquals(
+      result.err,
+      "load discovered config /workspace/nerd-fonts-installer.yaml: at least one font family is required\n",
+    )
+    assertEquals(result.out, "")
+
+  test("--font-names with no working directory during discovery exits 1 without a path"):
+    val cause  = ConfigError.NoWorkingDirectory(EnvironmentError.NoWorkingDirectory("gone"))
+    val result = run(deps().copy(discoverConfig = () => Left(cause)), "--font-names")
+    assertEquals(result.code, 1)
+    assertEquals(result.err, "locate current directory: gone\n")
+    assertEquals(result.out, "")
 
   test("a flag missing its value is a usage error"):
     val result = run(deps(), "--config")
@@ -167,6 +185,21 @@ final class CliSuite extends munit.FunSuite:
         ),
       ),
     )
+
+  test("a repeated --config keeps the last value, as Go's flag package does"):
+    val seen   = AtomicReference(Option.empty[os.Path])
+    val d      = deps().copy(loadConfig = path =>
+      seen.set(Some(path))
+      Right(hackConfig))
+    val result = run(d, "--config", "a.yaml", "--config", "b.yaml")
+    assertEquals(result.code, 0)
+    assertEquals(seen.get(), Some(cwd / "b.yaml"))
+
+  test("a repeated --dry-run stays a dry run and exits 0"):
+    val (d, seen) = recordingInstall(withConfig())
+    val result    = run(d, "--config", "fonts.yaml", "--dry-run", "--dry-run")
+    assertEquals(result.code, 0)
+    assertEquals(seen.get().map(_.dryRun), Some(DryRun.Enabled))
 
   test("positionals are ignored and stop option parsing, so a later --dry-run has no effect"):
     val (d, seen) = recordingInstall(withConfig())
@@ -221,7 +254,12 @@ final class CliSuite extends munit.FunSuite:
     val d      = deps().copy(loadConfig = path => Left(ConfigError.Unreadable(path, "permission denied")))
     val result = run(d, "--config", "missing.yaml")
     assertEquals(result.code, 1)
-    assertEquals(result.err, "load config missing.yaml: read /workspace/missing.yaml: permission denied\n")
+    assertEquals(result.err, "load config missing.yaml: read missing.yaml: permission denied\n")
+
+  test("--config \"\" reports not found without reading the working directory"):
+    val result = run(deps(), "--config", "")
+    assertEquals(result.code, 1)
+    assertEquals(result.err, "load config : open : no such file or directory\n")
 
   test("a discovered config that fails to load exits 1 with the load discovered config prefix"):
     val broken = ConfigError.Invalid(cwd / "nerd-fonts-installer.yaml", ConfigValidationError.NoFamilies)
@@ -376,6 +414,10 @@ final class CliSuite extends munit.FunSuite:
       os.Path("/scratch/downloads"),
     )
 
-  test("the download temp directory falls back to java.io.tmpdir when $TMPDIR is blank"):
-    val expected = os.Path(java.nio.file.Path.of(System.getProperty("java.io.tmpdir")).toAbsolutePath)
-    assertEquals(Cli.tempDir(environment(Map("TMPDIR" -> ""))), expected)
+  test("the download temp directory falls back to the java.io.tmpdir property when $TMPDIR is blank"):
+    val env = environment(Map("TMPDIR" -> ""), properties = Map("java.io.tmpdir" -> "/var/tmp"))
+    assertEquals(Cli.tempDir(env), os.Path("/var/tmp"))
+
+  test("the download temp directory falls back to /tmp when neither is set"):
+    val env = environment(Map("TMPDIR" -> ""))
+    assertEquals(Cli.tempDir(env), os.Path("/tmp"))

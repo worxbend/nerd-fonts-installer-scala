@@ -1,5 +1,6 @@
 package io.worxbend.nerdfonts.cli
 
+import io.worxbend.nerdfonts.TerminalSafe
 import io.worxbend.nerdfonts.environment.ColourMode
 import io.worxbend.nerdfonts.install.InstallEvent
 import io.worxbend.nerdfonts.install.InstallEventSink
@@ -39,11 +40,16 @@ final class ConsoleEventRenderer(out: PrintWriter, err: PrintWriter, colours: Co
       err.println(s"${paint("⠋", spinner)} Refreshing font cache for ${paint(root.toString, path)}")
     case InstallEvent.FontCacheRefreshed                 => err.println(s"${paint("✅", success)} Font cache refreshed")
 
-  // `Sanitize`, not the throwing default: a family name from a hostile config may contain bytes fansi would
-  // otherwise refuse, and a warning line must never turn into a crash.
-  private def paint(value: String, style: fansi.Attrs): String = colours match
-    case ColourMode.Ansi  => style(fansi.Str(value, fansi.ErrorMode.Sanitize)).render
-    case ColourMode.Plain => value
+  // `TerminalSafe` first: a family name (`FamilyName.parse` allows control characters) or a zip entry name
+  // from a hostile release can carry a raw escape character, and `Plain` mode — `NO_COLOR`, a redirected
+  // stderr, a dumb terminal — has no other defence between upstream data and a real terminal. `Sanitize`, not
+  // the throwing default, on top of that in `Ansi` mode: the now-control-free value may still contain bytes
+  // fansi's own parser would otherwise refuse, and a warning line must never turn into a crash.
+  private def paint(value: String, style: fansi.Attrs): String =
+    val safe = TerminalSafe.sanitize(value)
+    colours match
+      case ColourMode.Ansi  => style(fansi.Str(safe, fansi.ErrorMode.Sanitize)).render
+      case ColourMode.Plain => safe
 
 object ConsoleEventRenderer:
   /** The lipgloss 256-colour numbers of the Go installer, one attribute set per role. */

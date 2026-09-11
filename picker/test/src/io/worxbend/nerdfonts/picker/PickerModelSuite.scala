@@ -215,3 +215,24 @@ final class PickerModelSuite extends munit.FunSuite:
 
   test("the initial model requires at least one release"):
     intercept[IllegalArgumentException](model(Vector.empty)).discard
+
+  // A release stem or tag is unvalidated GitHub API text (`FamilyName.parse` has not run yet, and a tag is
+  // never validated at all), and this model builds the rows painted into the raw-mode frame. A spoofed release
+  // must not be able to carry a live escape sequence into that frame.
+  test("a hostile family stem is neutralised in the row title, but not in its identity"):
+    val esc     = ""
+    val hostile = s"Hack${esc}]0;pwned${esc}[2J"
+    val release = latest.copy(families = Vector(hostile))
+    val built   = model(Vector(release)).familyItems(release, Set.empty)
+    val item    = built.head
+    assert(!item.title.contains(esc), item.title)
+    assert(item.title.contains("Hack?]0;pwned?[2J"), item.title)
+    assertEquals(item.value, hostile)
+
+  test("a hostile release tag is neutralised in the release row title"):
+    val esc     = ""
+    val hostile = tag(s"v3.4.0${esc}]0;pwned${esc}[2J")
+    val release = latest.copy(tag = hostile)
+    val title   = model(Vector(release)).releaseList.items.head.title
+    assert(!title.contains(esc), title)
+    assert(title.contains(s"v3.4.0?]0;pwned?[2J"), title)

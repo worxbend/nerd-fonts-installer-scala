@@ -1,5 +1,6 @@
 package io.worxbend.nerdfonts.picker
 
+import io.worxbend.nerdfonts.TerminalSafe
 import io.worxbend.nerdfonts.fonts.DestinationPath
 import io.worxbend.nerdfonts.fonts.RefreshFontCache
 import io.worxbend.nerdfonts.releases.Release
@@ -117,12 +118,18 @@ final private[picker] case class PickerModel private (
 
   private def releaseFor(item: ListItem): Option[Release] = releases.find(_.tag.value == item.value)
 
+  // `family` is an unvalidated release-asset stem (`FamilyName.parse` has not run yet) and `release.tag.value`
+  // is unvalidated GitHub API text; both are sanitised only in the text that reaches the rendered frame
+  // (`title`/`description`), never in `value`, which stays the exact stem so selection and, later,
+  // `FamilyName.parse` still see what the release actually published.
   private[picker] def familyItems(release: Release, selected: Set[String]): Vector[ListItem] =
+    val tag = TerminalSafe.sanitize(release.tag.value)
     release.families.map: family =>
       val marker = if selected(family) then icons.checked else icons.unchecked
+      val safe   = TerminalSafe.sanitize(family)
       ListItem(
-        title = s"$marker  ${icons.iconForFamily(family)}  $family",
-        description = s"${icons.release} ${release.tag.value}  ${icons.separator}  ${FamilyHint.of(family)}",
+        title = s"$marker  ${icons.iconForFamily(family)}  $safe",
+        description = s"${icons.release} $tag  ${icons.separator}  ${FamilyHint.of(family)}",
         value = family,
       )
 
@@ -154,7 +161,7 @@ private[picker] object PickerModel:
     )
 
   private def releaseItem(icons: IconSet, release: Release): ListItem = ListItem(
-    title = s"${icons.release} ${release.tag.value}",
+    title = s"${icons.release} ${TerminalSafe.sanitize(release.tag.value)}",
     description =
       s"${icons.font}  ${release.families.size} font archives  ${icons.separator}  ${icons.toolbox} ready for terminals and editors",
     value = release.tag.value,

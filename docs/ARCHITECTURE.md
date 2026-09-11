@@ -21,7 +21,7 @@ terminal code. Root package `io.worxbend.nerdfonts`; packages are named after co
 | Package | Role | Public surface |
 | --- | --- | --- |
 | `fonts` | Validated domain values | `FamilyName` (+ `FamilyNameError`), `ReleaseTag`, `ReleaseSelector`, `DestinationPath`, `RefreshFontCache`, `DryRun`, `InstallConfig` (+ `InstallConfig.validated`, `ConfigValidationError`) |
-| `environment` | The process environment as a port | `Environment` (`System`, `fixed`), `EnvironmentError`, `PathExpander` (+ `PathError`), `ColourMode` |
+| `environment` | The process environment as a port | `Environment` (`variable`, `property`, `homeDirectory`, `workingDirectory`; `System`, `fixed`), `EnvironmentError`, `PathExpander` (+ `PathError`), `ColourMode` |
 | `http` | The one HTTP port and its adapter | `HttpClient` (+ `getString`), `HttpRequest`, `Url`, `ByteLimit`, `Overflow`, `HttpError` (+ `statusLine`), `HttpStatus`, `BoundedInputStream`, `RawResponse` + `ResponseDelivery`, `JdkHttpClient` |
 | `releases` | The Nerd Fonts release catalogue | `Release`, `ReleaseCatalogue`, `GitHubReleaseCatalogue`, `ReleaseError`, `ReleaseSelection`, `ReleaseUrls` (a value over one `releases` base; `ReleaseUrls.github` is production), `DownloadUrl`, `Sha256Digest`, `ChecksumManifest` |
 | `process` | Subprocesses as a port | `ProcessRunner`, `ProcessSpec` (+ `Stdin`, `Stdout`, `Stderr`), `ProcessResult`, `ExitStatus`, `ProcessError`, `JdkProcessRunner` |
@@ -138,7 +138,7 @@ the interrupt catch) and `Application` is the Go `run` after flag parsing, a fun
 | `AppDependencies` | Function-typed seams (`loadConfig`, `discoverConfig`, `configCandidates`, `listReleases`, `runPicker`, `installFonts`, `isTerminal`, `expandDestination`) plus `environment` and `colours`. `production(env, tempDir)` is the composition root: `JdkHttpClient`, `GitHubReleaseCatalogue`, `FontInstaller(http, tempDir, FcCacheRefresher(JdkProcessRunner(env)), urls = …)`, `ConfigLoader`/`ConfigDiscovery`/`ConfigLocations`, `PickerSession.run(_, _, _, SttyTerminal(processes))`, `PathExpander`, `OutputStyle.detect(env, TerminalProbe.isTerminal())`. It is also the only reader of the test hook `NERD_FONTS_INSTALLER_BASE_URL` (`AppDependencies.baseUrlVariable`): a non-blank value becomes `ReleaseUrls(Url(base))`, so the CI interrupt smoke can aim the shipped binary at a local stub; blank or unset keeps `ReleaseUrls.github` |
 | `Application` | `run` dispatches on `CliMode`; `printFontNames` (explicit/env/discovered release, else `latest`, never announced), `resolveConfig` (explicit → env → discovered with `Using config <path>` → `startPicker`), `selectRelease` (empty listing is `NoReleases` whatever the selector), `install` (expand the destination, build the `InstallRequest`, run the engine through `ConsoleEventRenderer`). `ResolvedConfig` (`private[cli]`) is `Ready(config)` or `PickerCancelled` |
 | `AppOutcome` | `Installed`, `DryRunPrinted`, `FontNamesPrinted`, `PickerCancelled` — cancellation is a success |
-| `AppFailure` (+ `InterruptPhase`) | One stderr line per case and the only place the operation prefixes live: `Config(cause, rawPath)` → `load config <raw>: `, `DiscoveredConfig(cause)` → `load discovered config <path>: ` (bare for `NoWorkingDirectory`), `NoConfig(candidates)` → the two hints, `NotATerminal`, `Release`, `Picker`, `UnsafeSelection`/`Destination`/`Install` → `install fonts: `, `Interrupted(Install | BeforeInstall)` |
+| `AppFailure` (+ `InterruptPhase`) | One stderr line per case and the only place the operation prefixes live: `Config(cause, rawPath)` → `load config <raw>: `, with `rawPath` also substituted back in for the absolute path `cause.render` would otherwise show (Go never absolutises `--config`/`$NERD_FONTS_INSTALLER_CONFIG` at all, so both the prefix and the wrapped error echo the same raw text; `Application.resolvePath` treats an empty raw path as `NotFound` outright rather than resolving it to the working directory, matching Go's `open : no such file or directory`); `DiscoveredConfig(cause)` → `load discovered config <path>: ` (bare for `NoWorkingDirectory`; no raw-path substitution, since a discovered candidate has no separate raw spelling), `NoConfig(candidates)` → the two hints, `NotATerminal`, `Release`, `Picker`, `UnsafeSelection`/`Destination`/`Install` → `install fonts: `, `Interrupted(Install | BeforeInstall)` |
 | `ExitCode.of` | `Right` → 0; `NoConfig`, `NotATerminal`, `Release(NotFound | NoReleases)` → 2; every other `Left` → 1 |
 | `OutputStyle.detect(env, consoleAttached)` | `NO_COLOR` and `TERM=dumb` always win; otherwise a console or `CLICOLOR_FORCE`/`FORCE_COLOR` (non-empty, not `0`) enables `Ansi` |
 | `ConsoleEventRenderer(out, err, colours)` | The only `InstallEventSink` in production: exhaustive match over the eight events, plan lines to stdout, everything else to stderr, lipgloss colours 63/42/214/81/39/219 through fansi in `Ansi` only, no locking |
@@ -258,13 +258,22 @@ no entry; the shipped binary's `--help` and `--version` are the runtime proof th
     any new banner row or panel must be paid for in `Layout`'s chrome constants.
 21. **Plain means plain.** With `ColourMode.Plain` no picker or spinner output contains `ESC[`; the alternate-screen,
     cursor and clear sequences are the terminal adapter's, emitted in raw mode only.
-22. **`AppFailure.render` is the only place operation prefixes are added.** Every nested error ADT renders its
+22. **Upstream text is sanitised before it reaches a terminal, in every colour mode.** `FamilyName.parse`
+    deliberately allows control characters, and a release tag, family stem or zip entry name is untrusted text
+    that may reach a display before (or without ever passing through) any validation. `TerminalSafe.sanitize`
+    (`core`, package `io.worxbend.nerdfonts`) replaces every C0 control character, `DEL` and the C1 range
+    one-for-one with `?` — length-preserving, so the picker's fuzzy-match positions still line up. It runs in
+    `ConsoleEventRenderer.paint` (both colour modes, ahead of `fansi`), in `ArchiveError`/`ArchiveEntryError.render`
+    for every embedded entry name, and in `PickerModel.familyItems`/`releaseItem` for the row `title`/`description`
+    text (never for `value`, which stays the exact stem the release published, for correct selection and
+    `FamilyName.parse` later).
+23. **`AppFailure.render` is the only place operation prefixes are added.** Every nested error ADT renders its
     detail only; `load config <path>: `, `load discovered config <path>: ` and `install fonts: ` are spelled once,
     in `cli`, so the same `ConfigError` reads differently depending on how the file was chosen and no message is
     prefixed twice.
-23. **Exit codes come from `ExitCode.of` or from picocli, nowhere else.** `Application` returns values; no step
+24. **Exit codes come from `ExitCode.of` or from picocli, nowhere else.** `Application` returns values; no step
     chooses a number. The union of the two sources is the exit-code table above.
-24. **`Application` never sees the argument array.** picocli types stop at `Cli`; everything below receives
+25. **`Application` never sees the argument array.** picocli types stop at `Cli`; everything below receives
     `CliOptions` and `AppDependencies`, which is what makes every §9 `cli` scenario a test on writers and an `Int`.
 
 ## Conventions that reviewers enforce

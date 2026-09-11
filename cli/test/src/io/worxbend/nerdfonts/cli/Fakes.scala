@@ -48,8 +48,15 @@ private[cli] object Fakes:
 
   def tagged(value: String): ReleaseSelector = ReleaseSelector.Tagged(tag(value))
 
-  def environment(variables: Map[String, String] = Map.empty): Environment =
-    Environment.fixed(variables, homeDirectory = Some(home), workingDirectory = Right(cwd))
+  def environment(
+      variables: Map[String, String] = Map.empty,
+      properties: Map[String, String] = Map.empty,
+  ): Environment = Environment.fixed(
+    variables,
+    homeDirectory = Some(home),
+    workingDirectory = Right(cwd),
+    properties = properties,
+  )
 
   /** The candidate list discovery would search on the fake machine. */
   def candidates(env: Environment): Vector[os.Path] = ConfigLocations.candidates(env).getOrElse(Vector.empty)

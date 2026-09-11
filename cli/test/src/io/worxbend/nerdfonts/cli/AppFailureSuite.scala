@@ -16,7 +16,13 @@ final class AppFailureSuite extends munit.FunSuite:
   test("an explicit config failure echoes the path as typed"):
     assertEquals(
       AppFailure.Config(ConfigError.NotFound(path), "./nerd-fonts-installer.yaml").render,
-      "load config ./nerd-fonts-installer.yaml: open /workspace/nerd-fonts-installer.yaml: no such file or directory",
+      "load config ./nerd-fonts-installer.yaml: open ./nerd-fonts-installer.yaml: no such file or directory",
+    )
+
+  test("a blank explicit config echoes as typed, not the working directory it resolved to"):
+    assertEquals(
+      AppFailure.Config(ConfigError.NotFound(cwd), "").render,
+      "load config : open : no such file or directory",
     )
 
   test("a discovered config failure names the candidate"):

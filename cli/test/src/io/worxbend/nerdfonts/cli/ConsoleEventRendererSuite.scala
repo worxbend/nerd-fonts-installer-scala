@@ -73,3 +73,20 @@ final class ConsoleEventRendererSuite extends munit.FunSuite:
   test("plan lines never reach stderr and progress lines never reach stdout"):
     val (out, err) = render(ColourMode.Ansi)
     assert(!stripAnsi(out).contains("Installing") && !stripAnsi(err).contains("Would install"))
+
+  // `FamilyName.parse` allows control characters (only `/`, `\`, NUL and `.`/`..` are rejected), and a release
+  // asset stem reaches this renderer before any further validation, so a spoofed release can carry a raw
+  // escape sequence straight into a family name. Neither colour mode may forward it to the terminal.
+  test("a hostile family name never reaches the terminal as a live escape sequence, in either colour mode"):
+    val hostile                              = family(s"Hack${esc}]0;pwned${esc}[2J")
+    def emitted(colours: ColourMode): String =
+      val out      = StringWriter()
+      val err      = StringWriter()
+      val renderer = ConsoleEventRenderer(PrintWriter(out, true), PrintWriter(err, true), colours)
+      renderer.emit(InstallEvent.Installed(hostile, target))
+      out.toString + err.toString
+    val plain                                = emitted(ColourMode.Plain)
+    val coloured                             = emitted(ColourMode.Ansi)
+    assert(!plain.contains(esc), plain)
+    assert(plain.contains("Hack?]0;pwned?[2J"), plain)
+    assert(!stripAnsi(coloured).contains(esc), coloured)

@@ -94,16 +94,22 @@ object Application:
   private def loadExplicit(raw: String, deps: AppDependencies): Either[AppFailure, InstallConfig] =
     resolvePath(raw, deps.environment).flatMap(deps.loadConfig).left.map(AppFailure.Config(_, raw))
 
-  // The loader needs an absolute path while the message keeps the raw text. An absolute path needs no working
-  // directory, so its absence only fails a relative one. Anything argv or an environment variable can carry is
-  // a well-formed POSIX path (no NUL), so `Path.of` cannot throw here.
+  // The loader needs an absolute path while the message keeps the raw text (`AppFailure.renderAsTyped`
+  // substitutes it back in). An absolute path needs no working directory, so its absence only fails a relative
+  // one. Anything argv or an environment variable can carry is a well-formed POSIX path (no NUL), so `Path.of`
+  // cannot throw here. `--config ""` resolves to the working directory itself, which Go never opens (it hands
+  // the empty string straight to `os.ReadFile` and gets `no such file or directory`); reporting `NotFound`
+  // directly avoids reading the cwd as a file and getting a different error shape (`Is a directory`).
   private def resolvePath(raw: String, env: Environment): Either[ConfigError, os.Path] =
     val path = Path.of(raw)
     if path.isAbsolute then Right(os.Path(path.normalize()))
     else
       env.workingDirectory.left
         .map(ConfigError.NoWorkingDirectory(_))
-        .map(cwd => os.Path(cwd.toNIO.resolve(path).normalize()))
+        .flatMap(cwd =>
+          if raw.isEmpty then Left(ConfigError.NotFound(cwd))
+          else Right(os.Path(cwd.toNIO.resolve(path).normalize())),
+        )
 
   private def discover(deps: AppDependencies): Either[AppFailure, Option[DiscoveredConfig]] =
     deps.discoverConfig().left.map(AppFailure.DiscoveredConfig(_))
