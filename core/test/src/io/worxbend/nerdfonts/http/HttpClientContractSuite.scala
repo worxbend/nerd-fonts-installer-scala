@@ -1,9 +1,7 @@
 package io.worxbend.nerdfonts.http
 
-import io.worxbend.nerdfonts.http.InMemoryHttpClient.Body
 import io.worxbend.nerdfonts.http.InMemoryHttpClient.Response
 
-import java.io.ByteArrayInputStream
 import java.io.InputStream
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -12,7 +10,9 @@ import scala.util.Try
 
 /**
  * The `HttpClient` contract, exercised through the in-memory fake. The fake delegates to the same
- * `ResponseDelivery` as the JDK adapter, so these assertions hold for production as well.
+ * `ResponseDelivery` as the JDK adapter, so these assertions hold for production as well. Anything true only
+ * of `InMemoryHttpClient` itself (its route map, its request log, how it opens a streamed body) belongs in
+ * [[InMemoryHttpClientSuite]] instead, so this suite's claim stays accurate.
  */
 final class HttpClientContractSuite extends munit.FunSuite:
   private val url   = Url("https://example.test/asset.zip")
@@ -75,35 +75,23 @@ final class HttpClientContractSuite extends munit.FunSuite:
     val result = client(Response.transport("connection reset")).get(HttpRequest(url), limit)(_ => ())
     assertEquals(result, Left(HttpError.Transport("connection reset")))
 
-  test("an unrouted URL is a transport failure rather than a network call"):
-    val result = InMemoryHttpClient(Map.empty).get(HttpRequest(url), limit)(_ => ())
-    assertEquals(result, Left(HttpError.Transport(s"no route for ${url.value}")))
-
   test("getString decodes the body as UTF-8"):
     val result = client(Response.ok("héllo")).getString(HttpRequest(url), ByteLimit.bytes(64))
     assertEquals(result, Right("héllo"))
 
-  test("every request is recorded with its headers"):
-    val http    = client(Response.ok("x"))
-    val request = HttpRequest(url, Map("Accept" -> "text/plain"))
-    assertEquals(http.get(request, limit)(_ => ()), Right(()))
-    assertEquals(http.requests, Vector(request))
+  test("getString reports a mid-body IOException as Transport instead of letting it escape"):
+    val failingAfterAFewBytes = InMemoryHttpClient.Body.Streamed: () =>
+      new InputStream:
+        private var served = 0
+        override def read(): Int =
+          if served < 3 then
+            served += 1
+            'x'.toInt
+          else throw java.io.IOException("Connection reset")
+    val result                =
+      client(Response.Served(200, Map.empty, failingAfterAFewBytes)).getString(HttpRequest(url), limit)
+    assertEquals(result, Left(HttpError.Transport("Connection reset")))
 
-  test("a streamed body opens a fresh stream per request"):
-    val opened = AtomicInteger(0)
-    val http   = client(
-      Response.Served(
-        200,
-        Map.empty,
-        Body.Streamed(() =>
-          opened.incrementAndGet(); ByteArrayInputStream(Array.emptyByteArray),
-        ),
-      ),
-    )
-    assertEquals(http.get(HttpRequest(url), limit)(_ => ()), Right(()))
-    assertEquals(http.get(HttpRequest(url), limit)(_ => ()), Right(()))
-    assertEquals(opened.get(), 2)
-
-  private def closable(closed: AtomicBoolean): Body = Body.Streamed: () =>
-    new ByteArrayInputStream("payload".getBytes):
+  private def closable(closed: AtomicBoolean): InMemoryHttpClient.Body = InMemoryHttpClient.Body.Streamed: () =>
+    new java.io.ByteArrayInputStream("payload".getBytes):
       override def close(): Unit = closed.set(true)
