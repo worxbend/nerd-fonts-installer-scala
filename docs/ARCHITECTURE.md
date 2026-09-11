@@ -14,13 +14,24 @@ picker -> core
 ```
 
 `core` contains the domain, the ports and the install engine. It never imports picocli, fansi or
-terminal code. Root package `io.worxbend.nerdfonts`; packages are named after concepts.
+terminal code. Root package `io.worxbend.nerdfonts`; packages are named after concepts. The edges are
+`moduleDeps` in `build.mill`; the one test-side addition is `picker.test -> core.test`, so the `stty` adapter
+is tested against the shared `FakeProcessRunner`.
+
+| Module | Third-party dependencies | Role |
+| --- | --- | --- |
+| `core` | ox, os-lib, upickle (ujson) | Domain values, ports and adapters, release catalogue, install engine |
+| `config` | scala-yaml, upickle | Strict YAML/JSON decoding, defaults, discovery |
+| `picker` | fansi, ox | Pure model and view, `Terminal` port, `stty` adapter, key decoder, spinner |
+| `cli` | picocli, fansi | Process boundary, `Application`, exit codes, event renderer, composition root, generated `BuildInfo` |
+| `app` | — | `Main`, SIGINT handler, native-image reflection config; the `NativeImageModule` |
 
 ### `core` packages
 
 | Package | Role | Public surface |
 | --- | --- | --- |
-| `fonts` | Validated domain values | `FamilyName` (+ `FamilyNameError`), `ReleaseTag`, `ReleaseSelector`, `DestinationPath`, `RefreshFontCache`, `DryRun`, `InstallConfig` (+ `InstallConfig.validated`, `ConfigValidationError`) |
+| (root) | Shared helpers | `Diagnostics.describe(error)` (`private[nerdfonts]`): the `<cause>` text of every message, so no adapter renders a `null` or blank cause; `TerminalSafe.sanitize` (`private[nerdfonts]`): replaces every C0/C1 control character and `DEL` with `?` so upstream text (a family stem, a zip entry name) cannot inject a terminal escape into a rendered line |
+| `fonts` | Validated domain values | `FamilyName` (+ `FamilyNameError`), `ReleaseTag`, `ReleaseSelector`, `DestinationPath`, `RefreshFontCache`, `DryRun`, `InstallConfig` (+ `InstallConfig.validated`, `ConfigValidationError`); `GoQuote` (`private[nerdfonts]`) reproduces Go `%q` |
 | `environment` | The process environment as a port | `Environment` (`variable`, `property`, `homeDirectory`, `workingDirectory`; `System`, `fixed`), `EnvironmentError`, `PathExpander` (+ `PathError`), `ColourMode` |
 | `http` | The one HTTP port and its adapter | `HttpClient` (+ `getString`), `HttpRequest`, `Url`, `ByteLimit`, `Overflow`, `HttpError` (+ `statusLine`), `HttpStatus`, `BoundedInputStream`, `RawResponse` + `ResponseDelivery`, `JdkHttpClient` |
 | `releases` | The Nerd Fonts release catalogue | `Release`, `ReleaseCatalogue`, `GitHubReleaseCatalogue`, `ReleaseError`, `ReleaseSelection`, `ReleaseUrls` (a value over one `releases` base; `ReleaseUrls.github` is production), `DownloadUrl`, `Sha256Digest`, `ChecksumManifest` |
@@ -49,6 +60,12 @@ the only thing that decides which host a run downloads from.
 | Fan-out | `FontInstaller.runFanOut` | One `supervised` scope: `Actor.create(sink)`, `Flow.fromIterable(plan.families).mapParUnordered(min(4, n))(...).runForeach(abortOnFailure)` |
 | Family | `FontInstaller.installFamilyNow` | `Started` → temp zip → download + SHA-256 → digest check → staging dir → `ArchiveExtractor.extract` → `DirectorySwap.replace` → `Installed`; the temp zip and staging dir are removed in `finally`; the whole body sits under `timeoutEither(familyDeadline, TimedOut)` |
 | Font cache | `FontInstaller.refreshCache` | `refresher.availability` decides between the `FontCacheUnavailable` warning and `RefreshingFontCache` → `refresh(root)` → `FontCacheRefreshed`; `FcCacheRefresher` runs `fc-cache -f <root>` with every stream inherited |
+| Caps | `SizeLimits` | `download` 768 MiB, `fontFile` 128 MiB, `archive` 2 GiB, `manifest` 1 MiB, `apiPage` 8 MiB — the Go reference's values, injectable so tests can lower them. Enforced by `ResponseDelivery`/`BoundedInputStream` for bodies and by `ArchiveExtractor` for entries |
+| Scratch removal | `Cleanup` (`private[install]`) | Best-effort `removeFile`/`removeTree`, used in `finally` blocks and after a swap's commit point; swallows non-fatal exceptions only, so an interrupt still propagates |
+
+Deadlines and concurrency constants live on the `FontInstaller` companion: `maxConcurrentInstalls = 4`,
+`defaultFamilyDeadline = 10 minutes`, `defaultManifestTimeout = 30 seconds`, temp zip name
+`nerd-font-*.zip`.
 
 
 ### `config` module — `io.worxbend.nerdfonts.config`
@@ -89,15 +106,16 @@ boundary is enforced by the compiler rather than by convention (`Frame`, `Viewpo
 | `PickerView.render(model, colours): Frame` (`private[picker]`) | The Go `View()`: banner box, list panel, side panel (wide layouts, only when it fits), help footer, and the done screen. `Layout` (`private[picker]`) owns the budget constants; `ListView` renders a `ListState` into exactly `listHeight` rows; `Box` draws a rounded, padded box of an exact size; `TextWidth` is the cell arithmetic (`displayWidth`, ANSI-aware `truncate`, `fit`, `wrap`) |
 | `Palette` (+ `Colour`, `Styles`, all `private[picker]`) | The neon palette, `brandRamp`, `gradientText`/`gradientRule`/`spread`/`statLine`/`progressBar`/`percentage`; every helper takes the `ColourMode` and returns bare text in `Plain` |
 | `IconMode` (+ `parse`, `IconModeError`), `IconSet` (`private[picker]`; + `forMode`, `iconForFamily`, `logo`), `FamilyHint.of` (`private[picker]`) | The Go icon tables verbatim (as `\u` escapes so the private-use glyphs survive tooling); `auto` resolves to the Unicode set |
-| `Terminal.withRawMode(body: RawTerminal => A): Either[TerminalError, A]`, `RawTerminal` (`size()`, `readKey()`, `write(frame)`) | The loan-shaped port; raw mode, alternate screen and hidden cursor exist only inside the loan |
+| `Terminal.withRawMode(body: RawTerminal => A): Either[TerminalError, A]`, `RawTerminal` (`size()`, `readKey()`, `write(frame)`), `TerminalError` | The loan-shaped port; raw mode, alternate screen and hidden cursor exist only inside the loan. `Frame` is an opaque `Vector[String]` (one entry per row), `Viewport(width, height)` the terminal size, `TerminalStreams(input, output)` the byte streams the adapter talks to (`TerminalStreams.process` in production) |
 | `SttyTerminal(processRunner, escapeTimeout = 50 ms, streams = TerminalStreams.process)` | The adapter: `stty -g` / `stty raw -echo` / `stty <saved>` through `ProcessRunner` with `Stdin.FromFile(/dev/tty)` and `Stdout.Capture`, never a shell; the restore runs in a `finally` around the raw-mode entry itself, so it fires even if `stty raw -echo` throws (not just if the session body does) and never fires if `stty -g` itself failed; the alternate screen and cursor sequences are emitted only from the success branch; `stty size` per frame with an 80×24 fallback; frames as `ESC[H` + lines joined by `\r\n` (each followed by `ESC[K`) + `ESC[J`, one flushed write |
 | `KeyDecoder(input, escapeTimeout)` (`private[picker]`) | Bytes → `PickerKey` per the §7 table; the byte after `ESC` is read under `timeoutOption`; unknown CSI/SS3 sequences and supplementary code points are consumed and dropped |
 | `StdinSource.stream` (`private[picker]`) | The one `abandonOnInterruptReads(System.in)` in the process |
 | `PickerSession.run(releases, icons, colours, terminal): Either[PickerError, PickerOutcome]` | render → read → update as a tail-recursive loop; `PickerError.NoReleases` before the terminal is touched, `PickerError.Terminal` when raw mode fails; end of input is a cancellation |
 | `ReleaseLoadingSpinner.around(stderr, colours)(load)` | The stderr spinner block: a daemon ticker fork inside a `supervised` scope whose body is `load()`, so the ticker is cancelled and joined before the final line; the line is redrawn with `\r` and space padding, never `ESC[K`; an `InterruptedException` unwinding `supervised` is caught just long enough to end the line with `  interrupted` before being rethrown, so a SIGINT during the load never leaves the cursor mid-spin. Frames are bubbles' `MiniDot` cycle `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏` |
 
-Test-side helper, public and reusable from `cli` tests: `picker.ScriptedTerminal(keys, viewport, rawMode)` feeds
-a key script, records every `Frame` and counts raw-mode entries and exits.
+Test-side helpers: `picker.ScriptedTerminal(keys, viewport, rawMode)` (public, reusable from `cli` tests) feeds
+a key script, records every `Frame` and counts raw-mode entries and exits; `picker.Fixtures` (package-private)
+holds two releases, a default model and a key-press helper.
 
 **Key precedence** (independent of filter focus, because the model consumes its keys before the list sees them):
 
@@ -174,10 +192,28 @@ no entry; the shipped binary's `--help` and `--version` are the runtime proof th
 
 | File | Role |
 | --- | --- |
-| `.github/workflows/checks.yml` | fmt check, scalafix `--check`, compile, tests on `ubuntu-24.04` + `macos-15`; a native-image smoke job on linux-amd64 (`--version`, `--help`, `--dry-run`, `--icons bogus` → 2, then the interrupt smoke); actionlint |
-| `.github/workflows/release.yml` | Four native images on per-target runners, tar.gz + sha256 per target, a GitHub Release on `v*` tags and a moving `latest` pre-release |
+| `.github/workflows/checks.yml` | fmt check, scalafix `--check`, compile, tests, then `app.run` from source (`--version`, `--help`, the example dry run) on `ubuntu-24.04` + `macos-15`; a native-image smoke job on linux-amd64 (`--version`, `--help`, `--dry-run`, `--icons bogus` → 2, then the interrupt smoke); actionlint |
+| `.github/workflows/release.yml` | Four native images on per-target runners (`ubuntu-24.04`, `ubuntu-24.04-arm`, `macos-15-intel`, `macos-15`), tests on each, tar.gz + sha256 per target, `checksums.txt` + `install.sh` attached, a GitHub Release on `v*` tags (or a `workflow_dispatch` naming an existing tag) and a moving `latest` pre-release refreshed on every push to `main` |
+| `.github/dependabot.yml` | Weekly grouped updates for GitHub Actions only; library versions are pinned by hand in `build.mill` |
 | `scripts/ci/interrupt-smoke.sh <binary>` | §6.8 end to end against the real binary: a Python stub answers the manifest with 404 and streams an endless `/latest/download/Hack.zip`; the binary runs with `NERD_FONTS_INSTALLER_BASE_URL` and `TMPDIR` pointed at a scratch directory, receives SIGINT one second in, and must exit 1 with `install fonts: interrupted`, leaving no `nerd-font-*.zip`, no `.Hack-*` and no `Hack` directory. Runs under `set -m` so the background binary is not started with SIGINT ignored |
-| `scripts/install.sh` | The end-user installer published with every release |
+| `scripts/install.sh` | The end-user installer published with every release: detects OS and architecture, downloads the tarball and `checksums.txt` over TLS 1.2+, verifies, installs into `~/.local/bin` |
+
+Application arguments follow `app.run` directly (`./mill --no-daemon app.run --help`): with this
+repository's wrapper everything after a `--` separator is dropped, and a bare `app.run` discovers the
+developer's own config and installs from it.
+
+## Comparison with the Go implementation
+
+The Go reference is the contract; this code reproduces its exit codes, operation prefixes, config
+discovery, output formats, install layout and atomic-replace semantics. [`PARITY.md`](PARITY.md) is the
+measured comparison: both binaries were run with identical arguments and environment and their streams
+diffed, scenario by scenario, with the verdict per row. The deviations kept on purpose are listed there
+and in [`SPEC.md`](SPEC.md) §11; the ones a user can notice are `--help` to stdout with exit 0, parser
+wording for a malformed command line and for an unknown YAML key, a second SIGINT halting with 130, and the
+picker's `h/l/f/d/u` aliases being unbound. Structurally the two differ where the languages do: Go's
+`errgroup` is an Ox `supervised` scope with a `Flow` fan-out and one private exception; Go's `context`
+cancellation is thread interruption; Bubble Tea's program is a pure `PickerModel` behind a `Terminal` loan;
+Go's `flag` is picocli with both dash spellings declared per option.
 
 ## Invariants
 
@@ -244,7 +280,6 @@ no entry; the shipped binary's `--help` and `--version` are the runtime proof th
     case-insensitive) and flattened to their base name, so a path inside the zip never decides where a byte
     lands; the declared size is refused before inflating, the stream is capped at `fontFile + 1`, the total
     at `archive`; every file is fsynced and closed explicitly; zero font files is an error.
-
 18. **Picker output crosses the `FamilyName` boundary exactly once**, in `PickerOutcome.of`. Stems are display
     data until then; an unsafe stem is `Rejected`, never a path.
 19. **The picker model is pure and the terminal is a loan.** `PickerModel.update` is a total function of model and
@@ -469,3 +504,8 @@ one concern per function; scaladoc on public types explains why, not what.
   pushes only.** A push to `main` that touches only `docs/**`, `*.md` or similar has nothing to ship, but the
   `latest` pre-release moves and force-pushes its tag on every push regardless; tag pushes and
   `workflow_dispatch` always report `relevant=true` so a real release is never skipped by the path check.
+- **`app.run` takes its arguments without a `--` separator.** With the checked-in wrapper (Mill 1.1.7)
+  `./mill --no-daemon app.run -- --help` reaches `Main` with an empty argument array (observed: the run
+  discovered the developer's own config and installed from it), while `app.run --help` and
+  `app.run --config config.example.yaml --dry-run` forward the arguments as typed. `AGENTS.md`,
+  `CONTRIBUTING.md` and `checks.yml` spell every invocation without the separator.
