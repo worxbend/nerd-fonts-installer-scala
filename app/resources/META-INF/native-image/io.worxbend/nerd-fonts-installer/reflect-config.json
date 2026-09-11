@@ -6,13 +6,5 @@
     "allDeclaredMethods": true,
     "allPublicMethods": true,
     "allDeclaredFields": true
-  },
-  {
-    "name": "picocli.CommandLine$AutoHelpMixin",
-    "allDeclaredConstructors": true,
-    "allPublicConstructors": true,
-    "allDeclaredMethods": true,
-    "allPublicMethods": true,
-    "fields": [{ "name": "helpRequested" }, { "name": "versionRequested" }]
   }
 ]
