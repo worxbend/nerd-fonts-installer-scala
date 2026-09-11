@@ -414,3 +414,8 @@ one concern per function; scaladoc on public types explains why, not what.
   path; the tradeoff accepted here is a documented minimum of glibc ≥ 2.34 (Ubuntu 22.04+, Debian 12+, RHEL/Rocky
   9+) for `linux-amd64`/`linux-arm64`, checked with `ldd`/`objdump -T` against each release build. Revisit if a
   supported-OS report comes in from an older distribution.
+- **`release.yml` checks out `inputs.version` for `workflow_dispatch`.** The default `actions/checkout@v4`
+  behaviour resolves `github.ref`, which for a manually dispatched run is the branch the dispatch was started
+  from, not the tag named in the form — so a re-publish of an old tag was silently building and `--clobber`-ing
+  it with whatever `main` HEAD happened to be. Both the `build` and `publish` jobs pin `ref` to
+  `inputs.version` on that event.

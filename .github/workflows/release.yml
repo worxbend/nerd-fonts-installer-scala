@@ -44,6 +44,11 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          # A workflow_dispatch re-publish must build the named tag, not whatever HEAD the dispatch was
+          # started from: default checkout resolves `github.ref`, which for workflow_dispatch is the
+          # triggering branch (main), not `inputs.version`.
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref }}
 
       - name: Resolve version
         id: version
@@ -131,6 +136,10 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          # Match the build jobs: a workflow_dispatch re-publish needs the tagged commit (for
+          # scripts/install.sh below), not the branch the dispatch was started from.
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref }}
 
       - name: Download artifacts
         uses: actions/download-artifact@v4
