@@ -54,7 +54,7 @@ final class GitHubReleaseCatalogue(
 
   private def request(page: Int): HttpRequest = HttpRequest(
     GitHubReleaseCatalogue.pageUrl(baseUrl, page),
-    Map("Accept" -> "application/vnd.github+json", "User-Agent" -> "nerd-fonts-installer"),
+    Map("Accept" -> "application/vnd.github+json", "User-Agent" -> HttpRequest.userAgent),
   )
 
   private def timedOut: ReleaseError = ReleaseError.Http(HttpError.Transport(s"timed out after $pageTimeout"))

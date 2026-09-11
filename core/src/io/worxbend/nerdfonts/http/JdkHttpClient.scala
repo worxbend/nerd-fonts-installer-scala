@@ -41,7 +41,7 @@ final class JdkHttpClient private (client: JavaHttpClient) extends HttpClient:
     val builder = JavaHttpRequest
       .newBuilder(URI.create(request.url.value))
       .GET()
-      .setHeader("User-Agent", JdkHttpClient.userAgent)
+      .setHeader("User-Agent", HttpRequest.userAgent)
     request.headers.foreach((name, value) => builder.setHeader(name, value))
     builder.build()
   .toEither.left.map(error => HttpError.Transport(Diagnostics.describe(error)))
@@ -57,7 +57,6 @@ final class JdkHttpClient private (client: JavaHttpClient) extends HttpClient:
     HttpError.Transport(Diagnostics.describe(error))
 
 object JdkHttpClient:
-  val userAgent: String        = "nerd-fonts-installer"
   val connectTimeout: Duration = Duration.ofSeconds(30)
 
   def apply(): JdkHttpClient = new JdkHttpClient(
