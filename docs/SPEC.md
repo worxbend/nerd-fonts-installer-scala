@@ -624,3 +624,46 @@ native-image cannot cross-compile and the Mill-fetched toolchain means no `setup
 `macos-arm64` → `macos-15`; never `macos-latest` or the retired `macos-13`; tar.gz + sha256 per target; GitHub
 Release on `v*` tags and a moving `latest` pre-release with stable asset names), `.github/dependabot.yml`,
 `AGENTS.md` + `CLAUDE.md`. `app.writeAssembly` (JVM jar) is a local convenience only.
+
+## 11. Implementation notes
+
+The code is the reference for anything below; each item is a deliberate departure from, or refinement of, the
+sections above, collected from the implementation commits and the integration pass. `docs/ARCHITECTURE.md`
+carries the reasoning; `docs/PARITY.md` the measured comparison with Go.
+
+- **§3.1 `ReleaseUrls` is a class over one `releases` base**, with `ReleaseUrls.github` as the production
+  instance; `InstallPlan.of(request, urls)` and `FontInstaller(…, urls)` take it as a defaulted parameter. The
+  composition root reads the undocumented test hook `NERD_FONTS_INSTALLER_BASE_URL` to point a run at a local
+  stub (CI interrupt smoke); users never see it.
+- **§3.1 / §6.3 `FamilyInstallError` has a `TempZip(cause)` case** (Go's `create temporary zip file: <cause>`)
+  and `render(family)` takes the family so the checksum message can name it without every case carrying it.
+- **§6.5 `FamilyInstallAborted` is raised in the flow's `runForeach`, not inside the worker**, because Ox wraps a
+  worker's exception in `ChannelClosedException.Error`; the boundary still catches exactly one type.
+- **§6.3 `ZipInputStream` consequences:** a file that is not a zip has no entries and reports
+  `no font files found` rather than Go's `open font zip`; an entry without a declared size skips the declared
+  check and relies on the `fontFile + 1` cap and the running total. `ArchiveEntryError.InvalidName` names a base
+  name the filesystem cannot represent.
+- **§3.1 `GitHubReleaseCatalogue` owns its 8 MiB page cap default** rather than reading `SizeLimits.apiPage`,
+  which lives in the later-built `install` package.
+- **§4 YAML:** a blank file, a comment-only file and a leading UTF-8 byte-order mark are all the empty document
+  (validation then says `at least one font family is required`), where Go reports `parse <path>: EOF` for the
+  first two. JSON keeps `encoding/json`'s rejection of a BOM. `multiple json values` is reported for any
+  trailing content, slightly broader than Go.
+- **§4 unknown-key wording** is `parse <path>: unknown field "<key>"` as §3.2 defines, not yaml.v3's two-line
+  `field <key> not found in type config.Config`; prefix, stream and exit code match.
+- **§4 `ReleaseTag.parse` and `DestinationPath.parse` return `Option`**; `InstallConfig.validated` turns absence
+  into `release is required` / `destination is required`.
+- **§7 `PickerStep` has a fourth case, `Cancelled`**, so `update` can ignore keys after the end without a flag.
+  `KeyDecoder.Char` is a BMP `Char` (supplementary code points are dropped); unknown CSI/SS3 sequences are
+  consumed whole; `Box` truncates with `…` instead of wrapping; the list window scrolls and the page indicator
+  counts pages; the spinner pads with spaces rather than `ESC[K`. `h/l/f/d/u` remain unbound.
+- **§8 `--help`** goes to stdout with exit 0 (as §1 states); a malformed command line prints picocli's own
+  first line (`Unknown option: '--bogus'`) before the usage, where Go prints `flag provided but not defined`.
+  Every option carries an explicit `order` so the usage text is Go's alphabetical order with `--help` last.
+- **§6.3 temp directory:** `nerd-font-*.zip` is staged under `$TMPDIR` when set and non-empty, else the JDK's
+  `java.io.tmpdir`, matching Go's `os.CreateTemp("", …)`.
+- **§6.8 second SIGINT** halts the process with 130 (Go absorbs repeats).
+- **§9 CI smoke:** `scripts/ci/interrupt-smoke.sh` implements the `kill -INT` scenario against a local Python
+  stub and is invoked by `.github/workflows/checks.yml`.
+- **§10** `README.md`, `SECURITY.md`, `CONTRIBUTING.md` and `CHANGELOG.md` are not yet written; `release.yml`
+  packages `README.md` only when it exists.

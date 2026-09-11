@@ -1,8 +1,9 @@
 # Architecture
 
 Status: covers every module — `core` (foundation packages and the install engine), `config`, `picker`, `cli` and
-`app`. The behavioural contract is [`SPEC.md`](SPEC.md); this file records how the code is shaped and which
-invariants must never move.
+`app` — plus the CI scripts and workflows. The behavioural contract is [`SPEC.md`](SPEC.md) (with its
+implementation notes); the measured comparison with the Go reference is [`PARITY.md`](PARITY.md). This file
+records how the code is shaped and which invariants must never move.
 
 ## Module map
 
@@ -22,7 +23,7 @@ terminal code. Root package `io.worxbend.nerdfonts`; packages are named after co
 | `fonts` | Validated domain values | `FamilyName` (+ `FamilyNameError`), `ReleaseTag`, `ReleaseSelector`, `DestinationPath`, `RefreshFontCache`, `DryRun`, `InstallConfig` (+ `InstallConfig.validated`, `ConfigValidationError`) |
 | `environment` | The process environment as a port | `Environment` (`System`, `fixed`), `EnvironmentError`, `PathExpander` (+ `PathError`), `ColourMode` |
 | `http` | The one HTTP port and its adapter | `HttpClient` (+ `getString`), `HttpRequest`, `Url`, `ByteLimit`, `Overflow`, `HttpError` (+ `statusLine`), `HttpStatus`, `BoundedInputStream`, `RawResponse` + `ResponseDelivery`, `JdkHttpClient` |
-| `releases` | The Nerd Fonts release catalogue | `Release`, `ReleaseCatalogue`, `GitHubReleaseCatalogue`, `ReleaseError`, `ReleaseSelection`, `ReleaseUrls`, `DownloadUrl`, `Sha256Digest`, `ChecksumManifest` |
+| `releases` | The Nerd Fonts release catalogue | `Release`, `ReleaseCatalogue`, `GitHubReleaseCatalogue`, `ReleaseError`, `ReleaseSelection`, `ReleaseUrls` (a value over one `releases` base; `ReleaseUrls.github` is production), `DownloadUrl`, `Sha256Digest`, `ChecksumManifest` |
 | `process` | Subprocesses as a port | `ProcessRunner`, `ProcessSpec` (+ `Stdin`, `Stdout`, `Stderr`), `ProcessResult`, `ExitStatus`, `ProcessError`, `JdkProcessRunner` |
 | `install` | The install engine | `InstallRequest`, `InstallPlan` (+ `InstallPlan.of`, `PlannedFamily`), `SizeLimits`, `InstallEvent` + `InstallEventSink`, `FontInstaller`, `ArchiveExtractor` (+ `ArchiveError`, `ArchiveEntryError`, `ExtractedCount`), `DirectorySwap` (+ `SwapError`), `FontCacheRefresher` (+ `FontCacheAvailability`, `FontCacheError`) with `FcCacheRefresher`, `InstallError`, `FamilyInstallError` |
 
@@ -35,15 +36,16 @@ the engine through `InstallEventSink` and the two public fakes.
 
 ### The install engine — `io.worxbend.nerdfonts.install`
 
-`FontInstaller(http, tempDir, refresher, limits, familyDeadline, manifestTimeout)` is the only class with
-behaviour; everything else is a value, a port or a pure step.
+`FontInstaller(http, tempDir, refresher, limits, familyDeadline, manifestTimeout, urls)` is the only class with
+behaviour; everything else is a value, a port or a pure step. `urls` defaults to `ReleaseUrls.github` and is
+the only thing that decides which host a run downloads from.
 
 | Step | Owner | Shape |
 | --- | --- | --- |
-| Plan | `InstallPlan.of(request)` | Pure: de-duplicate families (first occurrence wins), compute `ReleaseUrls.download(selector, family)` and `root / family` per family. `FontInstaller.plan` returns it; `install` executes exactly it |
+| Plan | `InstallPlan.of(request, urls)` | Pure: de-duplicate families (first occurrence wins), compute `urls.download(selector, family)` and `root / family` per family. `FontInstaller.plan` returns it; `install` executes exactly it |
 | Dry run | `FontInstaller.describe` | `WouldInstall` per planned family, then `WouldRefreshCache(root)`; no port is touched |
 | Root | `FontInstaller.createRoot` | `os.makeDir.all(root)`; failure is `InstallError.Destination` and nothing else runs |
-| Manifest | `FontInstaller.fetchDigests` | `getString(checksums, limits.manifest, Overflow.Truncate)` under `timeoutEither(30 s)`; any failure is the `ChecksumManifestUnavailable` warning and an empty map |
+| Manifest | `FontInstaller.fetchDigests` | `getString(urls.checksums(selector), limits.manifest, Overflow.Truncate)` under `timeoutEither(30 s)`; any failure is the `ChecksumManifestUnavailable` warning and an empty map |
 | Fan-out | `FontInstaller.runFanOut` | One `supervised` scope: `Actor.create(sink)`, `Flow.fromIterable(plan.families).mapParUnordered(min(4, n))(...).runForeach(abortOnFailure)` |
 | Family | `FontInstaller.installFamilyNow` | `Started` → temp zip → download + SHA-256 → digest check → staging dir → `ArchiveExtractor.extract` → `DirectorySwap.replace` → `Installed`; the temp zip and staging dir are removed in `finally`; the whole body sits under `timeoutEither(familyDeadline, TimedOut)` |
 | Font cache | `FontInstaller.refreshCache` | `refresher.availability` decides between the `FontCacheUnavailable` warning and `RefreshingFontCache` → `refresh(root)` → `FontCacheRefreshed`; `FcCacheRefresher` runs `fc-cache -f <root>` with every stream inherited |
@@ -124,10 +126,10 @@ the interrupt catch) and `Application` is the Go `run` after flag parsing, a fun
 
 | Type | Role |
 | --- | --- |
-| `Cli.run(args, out, err, deps): Int` (+ the production overload) | Builds the root `CommandLine` (`setStopAtPositional`, `Help.Ansi.OFF`, a programmatic `VersionProvider`) and runs it through a custom `IExecutionStrategy`: validate `--icons` (exit 2 with the Go message) → `CommandLine.executeHelpRequest` (`--help`/`--version`, exit 0) → `Application.run` under `Interruptible` (an escaping `InterruptedException` becomes `AppFailure.Interrupted(BeforeInstall)`) → print the `AppFailure` line → `ExitCode.of`. picocli's own usage errors exit 2 before the strategy runs |
-| `RootCommand` (`private[cli]`, `@Command`) | The one class allowed a `var`: picocli binds every option through an annotated setter into a single `OptionDraft`. Both flag spellings per option, `-h/-help/--help` as `usageHelp`, `-version/--version` as `versionHelp`, a hidden `@Parameters(arity = "0..*")` sink, no mixin; `--icons` stays a raw `String` until `Cli` validates it |
+| `Cli.run(args, out, err, deps): Int` (+ the production overload, which passes `AppDependencies.production(Environment.System, Cli.tempDir(env))` — `$TMPDIR` when non-empty, else `java.io.tmpdir`, made absolute) | Builds the root `CommandLine` (`setStopAtPositional`, `Help.Ansi.OFF`, a programmatic `VersionProvider`) and runs it through a custom `IExecutionStrategy`: validate `--icons` (exit 2 with the Go message) → `CommandLine.executeHelpRequest` (`--help`/`--version`, exit 0) → `Application.run` under `Interruptible` (an escaping `InterruptedException` becomes `AppFailure.Interrupted(BeforeInstall)`) → print the `AppFailure` line → `ExitCode.of`. picocli's own usage errors exit 2 before the strategy runs |
+| `RootCommand` (`private[cli]`, `@Command`) | The one class allowed a `var`: picocli binds every option through an annotated setter into a single `OptionDraft`. Both flag spellings per option, an explicit `order` on each (Go's alphabetical listing, help last), `-h/-help/--help` as `usageHelp`, `-version/--version` as `versionHelp`, a hidden `@Parameters(arity = "0..*")` sink, no mixin; `--icons` stays a raw `String` until `Cli` validates it |
 | `CliOptions(explicitConfig: Option[String], mode: CliMode, dryRun, interactive: Interactive, icons: IconMode)` | The immutable result of parsing; the raw `--config` text survives so `load config <path>` echoes what was typed |
-| `AppDependencies` | Function-typed seams (`loadConfig`, `discoverConfig`, `configCandidates`, `listReleases`, `runPicker`, `installFonts`, `isTerminal`, `expandDestination`) plus `environment` and `colours`. `production(env, tempDir)` is the composition root: `JdkHttpClient`, `GitHubReleaseCatalogue`, `FontInstaller(http, tempDir, FcCacheRefresher(JdkProcessRunner(env)))`, `ConfigLoader`/`ConfigDiscovery`/`ConfigLocations`, `PickerSession.run(_, _, _, SttyTerminal(processes))`, `PathExpander`, `OutputStyle.detect(env, TerminalProbe.isTerminal())` |
+| `AppDependencies` | Function-typed seams (`loadConfig`, `discoverConfig`, `configCandidates`, `listReleases`, `runPicker`, `installFonts`, `isTerminal`, `expandDestination`) plus `environment` and `colours`. `production(env, tempDir)` is the composition root: `JdkHttpClient`, `GitHubReleaseCatalogue`, `FontInstaller(http, tempDir, FcCacheRefresher(JdkProcessRunner(env)), urls = …)`, `ConfigLoader`/`ConfigDiscovery`/`ConfigLocations`, `PickerSession.run(_, _, _, SttyTerminal(processes))`, `PathExpander`, `OutputStyle.detect(env, TerminalProbe.isTerminal())`. It is also the only reader of the test hook `NERD_FONTS_INSTALLER_BASE_URL` (`AppDependencies.baseUrlVariable`): a non-blank value becomes `ReleaseUrls(Url(base))`, so the CI interrupt smoke can aim the shipped binary at a local stub; blank or unset keeps `ReleaseUrls.github` |
 | `Application` | `run` dispatches on `CliMode`; `printFontNames` (explicit/env/discovered release, else `latest`, never announced), `resolveConfig` (explicit → env → discovered with `Using config <path>` → `startPicker`), `selectRelease` (empty listing is `NoReleases` whatever the selector), `install` (expand the destination, build the `InstallRequest`, run the engine through `ConsoleEventRenderer`). `ResolvedConfig` (`private[cli]`) is `Ready(config)` or `PickerCancelled` |
 | `AppOutcome` | `Installed`, `DryRunPrinted`, `FontNamesPrinted`, `PickerCancelled` — cancellation is a success |
 | `AppFailure` (+ `InterruptPhase`) | One stderr line per case and the only place the operation prefixes live: `Config(cause, rawPath)` → `load config <raw>: `, `DiscoveredConfig(cause)` → `load discovered config <path>: ` (bare for `NoWorkingDirectory`), `NoConfig(candidates)` → the two hints, `NotATerminal`, `Release`, `Picker`, `UnsafeSelection`/`Destination`/`Install` → `install fonts: `, `Interrupted(Install | BeforeInstall)` |
@@ -159,7 +161,17 @@ Test-side helper: `cli.Fakes` (package-private) builds an `AppDependencies` whos
 its code. The SIGINT handler (`sun.misc.Signal`) interrupts the main thread on the first signal and
 `Runtime.halt(130)`s on the second. `app/resources/META-INF/native-image/io.worxbend/nerd-fonts-installer/reflect-config.json`
 lists `RootCommand`; `MainSuite` walks the `cli` class directory on the test class path and fails if any
-`@Command`-annotated class is missing from that list.
+`@Command`-annotated class is missing from that list. `VersionProvider` is wired programmatically and needs
+no entry; the shipped binary's `--help` and `--version` are the runtime proof that the list is complete.
+
+### CI scripts and workflows
+
+| File | Role |
+| --- | --- |
+| `.github/workflows/checks.yml` | fmt check, scalafix `--check`, compile, tests on `ubuntu-24.04` + `macos-15`; a native-image smoke job on linux-amd64 (`--version`, `--help`, `--dry-run`, `--icons bogus` → 2, then the interrupt smoke); actionlint |
+| `.github/workflows/release.yml` | Four native images on per-target runners, tar.gz + sha256 per target, a GitHub Release on `v*` tags and a moving `latest` pre-release |
+| `scripts/ci/interrupt-smoke.sh <binary>` | §6.8 end to end against the real binary: a Python stub answers the manifest with 404 and streams an endless `/latest/download/Hack.zip`; the binary runs with `NERD_FONTS_INSTALLER_BASE_URL` and `TMPDIR` pointed at a scratch directory, receives SIGINT one second in, and must exit 1 with `install fonts: interrupted`, leaving no `nerd-font-*.zip`, no `.Hack-*` and no `Hack` directory. Runs under `set -m` so the background binary is not started with SIGINT ignored |
+| `scripts/install.sh` | The end-user installer published with every release |
 
 ## Invariants
 
@@ -186,7 +198,8 @@ lists `RootCommand`; `MainSuite` walks the `cli` class directory on the test cla
 6. **No shell, ever.** `ProcessSpec.command` is an argv vector handed to `ProcessBuilder`; `Inherit` streams map
    to `Redirect.INHERIT` so `fc-cache` shares the real terminal.
 7. **Nothing below the composition root reads `sys.env` / `sys.props`.** `Environment.System` is the only
-   place that does; everything else receives an `Environment`.
+   place that does; everything else receives an `Environment`. The composition root itself (`Cli.tempDir`,
+   `AppDependencies.production`) consults `TMPDIR`, `java.io.tmpdir` and the base-URL hook through that port.
 8. **Every user-facing rendering of a non-2xx response goes through `HttpError.Status#statusLine`**, which adds
    the reason phrase `java.net.http` does not expose (`404 Not Found`, unregistered codes render bare).
 9. **One loader for every config route.** `--config`, `$NERD_FONTS_INSTALLER_CONFIG` and every discovered
@@ -376,3 +389,17 @@ one concern per function; scaladoc on public types explains why, not what.
   class initialises — inside the builder, for a native image — so the flag belongs on the builder JVM
   (`-J-D…` in `nativeImageOptions`), not on the binary. A four-line banner on every `--version` would break the
   "error lines are the bare rendered message" contract and every script that checks stderr is empty.
+- **`ReleaseUrls` is a value with a base, not an object with a constant.** The CI interrupt smoke needs the
+  shipped binary to download from a local stub, and a constant would have forced either a JVM-only test or a
+  compile-time flag. The base is threaded as a defaulted parameter (`InstallPlan.of`, `FontInstaller`) so no
+  production call site changed, and `ReleaseUrls.apply` strips a trailing slash so an operator-typed override
+  cannot produce `//latest`.
+- **`NERD_FONTS_INSTALLER_BASE_URL` is a test hook, read once in `AppDependencies.production`.** It is not in
+  `--help`, the README or the spec's user-facing surface; it exists for `scripts/ci/interrupt-smoke.sh` and is
+  covered by `AppDependenciesSuite` through a dry run, which proves the wiring without a request.
+- **Downloads are staged under `$TMPDIR`, then `java.io.tmpdir`.** Go's `os.CreateTemp("", …)` honours the
+  variable; the JDK property is fixed at `/tmp` on Linux, so an operator who redirects temp files (or the smoke
+  script, which asserts on the directory) would otherwise see the zip land elsewhere.
+- **Every picocli option carries an explicit `order`.** picocli lists setter-bound options in reflection order,
+  which the JVM does not define; the first native build listed `--font-names` before `--config`. The order is
+  Go's (`flag` sorts alphabetically) with `--help` last, because Go does not list it at all.
