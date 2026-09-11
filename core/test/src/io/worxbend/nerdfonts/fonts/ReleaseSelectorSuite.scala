@@ -16,6 +16,16 @@ final class ReleaseSelectorSuite extends munit.FunSuite:
   test("Latest renders as the keyword"):
     assertEquals(ReleaseSelector.Latest.render, "latest")
 
+  test("of classifies an already-validated tag without re-parsing it"):
+    assertEquals(ReleaseSelector.of(ReleaseTag.parse("latest").get), ReleaseSelector.Latest)
+    assertEquals(
+      ReleaseSelector.of(ReleaseTag.parse("v3.4.0").get),
+      ReleaseSelector.Tagged(ReleaseTag.parse("v3.4.0").get),
+    )
+
+  test("parse delegates to of once the text is trimmed and validated"):
+    assertEquals(ReleaseSelector.parse(" v3.4.0 "), ReleaseSelector.of(ReleaseTag.parse("v3.4.0").get))
+
   test("a release tag is trimmed and never blank"):
     assertEquals(ReleaseTag.parse(" v1 ").map(_.value), Some("v1"))
     assertEquals(ReleaseTag.parse(" \t"), None)

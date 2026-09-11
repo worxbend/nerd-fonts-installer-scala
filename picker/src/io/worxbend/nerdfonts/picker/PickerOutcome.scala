@@ -35,7 +35,7 @@ object PickerOutcome:
       validated(selected.toVector.sorted) match
         case Left(error)     => Rejected(ConfigValidationError.InvalidFamily(error))
         case Right(families) => Selected(
-            InstallConfig(ReleaseSelector.parse(release.tag.value), destination, refreshFontCache, families),
+            InstallConfig(ReleaseSelector.of(release.tag), destination, refreshFontCache, families),
           )
 
   private def validated(stems: Vector[String]): Either[FamilyNameError, Vector[FamilyName]] = stems

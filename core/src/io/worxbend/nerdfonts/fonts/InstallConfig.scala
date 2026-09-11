@@ -31,7 +31,7 @@ object InstallConfig:
     val tag   = ReleaseTag.parse(release).toRight(ConfigValidationError.ReleaseRequired).ok()
     val root  = DestinationPath.parse(destination).toRight(ConfigValidationError.DestinationRequired).ok()
     val names = validatedFamilies(families).ok()
-    InstallConfig(ReleaseSelector.parse(tag.value), root, refreshFontCache, names)
+    InstallConfig(ReleaseSelector.of(tag), root, refreshFontCache, names)
 
   private def validatedFamilies(raw: Vector[String]): Either[ConfigValidationError, Vector[FamilyName]] =
     if raw.isEmpty then Left(ConfigValidationError.NoFamilies)

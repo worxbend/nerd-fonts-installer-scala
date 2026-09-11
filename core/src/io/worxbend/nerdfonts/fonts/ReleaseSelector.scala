@@ -20,7 +20,9 @@ object ReleaseSelector:
   val latestKeyword: String = "latest"
 
   /** A blank value or the keyword `latest` selects the newest release; anything else is a tag. */
-  def parse(raw: String): ReleaseSelector = ReleaseTag.parse(raw) match
-    case Some(tag) if tag.value == latestKeyword => Latest
-    case Some(tag)                               => Tagged(tag)
-    case None                                    => Latest
+  def parse(raw: String): ReleaseSelector = ReleaseTag.parse(raw).fold(Latest)(of)
+
+  /** From an already-validated tag: no re-parsing, so a caller holding a `ReleaseTag` never round-trips it
+   * through text just to classify it as `latest` or not.
+   */
+  def of(tag: ReleaseTag): ReleaseSelector = if tag.value == latestKeyword then Latest else Tagged(tag)
