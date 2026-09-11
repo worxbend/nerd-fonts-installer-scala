@@ -3,10 +3,12 @@
 #
 # Usage:
 #   curl --proto '=https' --tlsv1.2 -sSfL \
-#     https://github.com/worxbend/nerd-fonts-installer-scala/releases/latest/download/install.sh | sh
+#     https://github.com/worxbend/nerd-fonts-installer-scala/releases/download/latest/install.sh | sh
 #
 # Environment variables:
-#   NERD_FONTS_INSTALLER_VERSION      Release tag to install, e.g. v0.1.0 (default: latest tagged release)
+#   NERD_FONTS_INSTALLER_VERSION      Release tag to install, e.g. v0.1.0 (default: latest, the moving
+#                                      pre-release CI refreshes on every push; stable asset names, never a
+#                                      redirect). Pin a real tag (e.g. v0.1.0) for reproducible installs.
 #   NERD_FONTS_INSTALLER_INSTALL_DIR  Directory to install the binary into (default: $HOME/.local/bin)
 
 set -eu
@@ -40,14 +42,14 @@ esac
 
 target="${os}-${arch}"
 
-if [ "${VERSION}" = "latest" ]; then
-  info "resolving latest release version"
-  latest_url="$(curl --proto '=https' --tlsv1.2 -fsSL -o /dev/null -w '%{url_effective}' \
-    "https://github.com/${REPO}/releases/latest")"
-  VERSION="${latest_url##*/}"
-  [ -n "${VERSION}" ] || die "failed to resolve the latest release version"
-fi
-
+# `VERSION` is already a valid tag name at this point — either a real `vX.Y.Z` or the literal `latest`, the
+# CI-refreshed moving tag whose assets `release.yml` republishes under stable names on every relevant push
+# (release.yml's job comment: "Asset names are stable; prefer a tagged release for pinning."). Both resolve
+# directly via `releases/download/<tag>/<asset>`; no lookup is needed, and none is attempted. Do NOT resolve
+# through the `releases/latest` GitHub alias: that alias is defined to skip pre-releases, and this project's
+# moving `latest` tag is deliberately published as one (matching how it is documented in `release.yml`), so
+# the alias would 404 until the very first stable `vX.Y.Z` tag exists — and even then it would silently
+# install that tag instead of the newest build, contradicting the "always current" contract of `latest`.
 archive="nerd-fonts-installer_${VERSION}_${target}.tar.gz"
 base="https://github.com/${REPO}/releases/download/${VERSION}"
 

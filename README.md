@@ -73,7 +73,7 @@ of gaps kept on purpose.
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSfL \
-  https://github.com/worxbend/nerd-fonts-installer-scala/releases/latest/download/install.sh | sh
+  https://github.com/worxbend/nerd-fonts-installer-scala/releases/download/latest/install.sh | sh
 ```
 
 `scripts/install.sh` detects `{linux,macos}-{amd64,arm64}`, downloads the matching tarball and
