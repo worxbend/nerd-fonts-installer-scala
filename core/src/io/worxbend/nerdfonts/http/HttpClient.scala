@@ -1,7 +1,12 @@
 package io.worxbend.nerdfonts.http
 
+import io.worxbend.nerdfonts.Diagnostics
+
+import java.io.IOException
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
+
+import ox.either.catching
 
 /**
  * The one HTTP port: a loan-shaped GET, so a body is streamed to `consume` and never materialised by the
@@ -24,10 +29,20 @@ trait HttpClient:
 
 object HttpClient:
   extension (client: HttpClient)
-    /** A GET whose whole body is small text (an API page, a checksum manifest), decoded as UTF-8. */
+    /**
+     * A GET whose whole body is small text (an API page, a checksum manifest), decoded as UTF-8.
+     *
+     * `readAllBytes` can fail mid-stream (a reset connection, a truncated proxy response) after headers were
+     * already accepted; that `IOException` is classified as `HttpError.Transport` here rather than left to
+     * escape as an exception, so every caller sees the same recoverable-error shape `get` promises. An
+     * interrupt reported as such an `IOException` has already had the thread's interrupt flag re-asserted by
+     * the JDK, so nothing further is needed for the enclosing scope to observe the cancellation.
+     */
     def getString(
         request: HttpRequest,
         limit: ByteLimit,
         overflow: Overflow = Overflow.Reject,
-    ): Either[HttpError, String] =
-      client.get(request, limit, overflow)(body => String(body.readAllBytes(), StandardCharsets.UTF_8))
+    ): Either[HttpError, String] = client
+      .get(request, limit, overflow)(body => body.readAllBytes().catching[IOException])
+      .flatMap(_.left.map(error => HttpError.Transport(Diagnostics.describe(error))))
+      .map(String(_, StandardCharsets.UTF_8))
