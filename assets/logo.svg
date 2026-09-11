@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">nerd-fonts-installer-scala</title>
+  <desc id="desc">A dark rounded glyph tile ringed in neon, with a four-pointed star glyph above a baseline and block cursor.</desc>
+  <defs>
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FF5FAF"/>
+      <stop offset="0.35" stop-color="#C75CFF"/>
+      <stop offset="0.65" stop-color="#5BA8FF"/>
+      <stop offset="1" stop-color="#5BF0B8"/>
+    </linearGradient>
+    <linearGradient id="star" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FF5FAF"/>
+      <stop offset="0.5" stop-color="#8A7CFF"/>
+      <stop offset="1" stop-color="#46E5E0"/>
+    </linearGradient>
+    <linearGradient id="baseline" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#FF5FAF"/>
+      <stop offset="0.5" stop-color="#C75CFF"/>
+      <stop offset="1" stop-color="#46E5E0"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.42" r="0.5">
+      <stop offset="0" stop-color="#8A7CFF" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#8A7CFF" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="tile"><rect x="8" y="8" width="112" height="112" rx="26"/></clipPath>
+  </defs>
+
+  <!-- the tile: one terminal cell, one glyph -->
+  <rect x="8" y="8" width="112" height="112" rx="26" fill="#13131F"/>
+  <g clip-path="url(#tile)">
+    <rect x="8" y="8" width="112" height="112" fill="url(#glow)"/>
+    <!-- faint cell grid, the way a glyph sheet is ruled -->
+    <g stroke="#2E2A57" stroke-width="1" opacity="0.55">
+      <path d="M36 8V120M64 8V120M92 8V120M8 36H120M8 64H120M8 92H120"/>
+    </g>
+  </g>
+  <rect x="10" y="10" width="108" height="108" rx="24" fill="none" stroke="url(#ring)" stroke-width="4"/>
+
+  <!-- the glyph: the four-pointed star of the picker's wordmark -->
+  <path d="M64 22Q70 51 98 56Q70 61 64 90Q58 61 30 56Q58 51 64 22Z" fill="url(#star)"/>
+  <circle cx="64" cy="56" r="4" fill="#13131F"/>
+  <circle cx="64" cy="56" r="2" fill="#EDEDF7"/>
+
+  <!-- baseline and block cursor -->
+  <rect x="34" y="98" width="46" height="4" rx="2" fill="url(#baseline)"/>
+  <rect x="84" y="94" width="10" height="12" rx="2" fill="#5BF0B8"/>
+</svg>

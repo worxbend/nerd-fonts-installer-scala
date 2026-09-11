@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="title desc">
+  <title id="title">nerd-fonts-installer-scala</title>
+  <desc id="desc">Nerd Fonts, installed the boring way. A neon glyph tile beside the project name, over a small terminal showing a dry run.</desc>
+  <defs>
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FF5FAF"/>
+      <stop offset="0.35" stop-color="#C75CFF"/>
+      <stop offset="0.65" stop-color="#5BA8FF"/>
+      <stop offset="1" stop-color="#5BF0B8"/>
+    </linearGradient>
+    <linearGradient id="star" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FF5FAF"/>
+      <stop offset="0.5" stop-color="#8A7CFF"/>
+      <stop offset="1" stop-color="#46E5E0"/>
+    </linearGradient>
+    <linearGradient id="ramp" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#FF5FAF"/>
+      <stop offset="0.25" stop-color="#C75CFF"/>
+      <stop offset="0.5" stop-color="#8A7CFF"/>
+      <stop offset="0.75" stop-color="#46E5E0"/>
+      <stop offset="1" stop-color="#5BF0B8"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.22" cy="0.35" r="0.55">
+      <stop offset="0" stop-color="#8A7CFF" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#8A7CFF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow2" cx="0.85" cy="0.9" r="0.5">
+      <stop offset="0" stop-color="#FF5FAF" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#FF5FAF" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="cells" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#2E2A57" stroke-width="1" opacity="0.45"/>
+    </pattern>
+    <clipPath id="tile"><rect x="0" y="0" width="112" height="112" rx="26"/></clipPath>
+    <clipPath id="terminal"><rect x="80" y="386" width="1120" height="190" rx="14"/></clipPath>
+  </defs>
+
+  <!-- ground -->
+  <rect width="1280" height="640" fill="#13131F"/>
+  <rect width="1280" height="640" fill="url(#cells)"/>
+  <rect width="1280" height="640" fill="url(#glow)"/>
+  <rect width="1280" height="640" fill="url(#glow2)"/>
+
+  <!-- the glyph tile, the same mark as logo.svg -->
+  <g transform="translate(80 96) scale(1.5)">
+    <rect x="0" y="0" width="112" height="112" rx="26" fill="#13131F"/>
+    <g clip-path="url(#tile)" stroke="#2E2A57" stroke-width="1" opacity="0.55">
+      <path d="M28 0V112M56 0V112M84 0V112M0 28H112M0 56H112M0 84H112"/>
+    </g>
+    <rect x="2" y="2" width="108" height="108" rx="24" fill="none" stroke="url(#ring)" stroke-width="4"/>
+    <path d="M56 14Q62 43 90 48Q62 53 56 82Q50 53 22 48Q50 43 56 14Z" fill="url(#star)"/>
+    <circle cx="56" cy="48" r="4" fill="#13131F"/>
+    <circle cx="56" cy="48" r="2" fill="#EDEDF7"/>
+    <rect x="26" y="90" width="46" height="4" rx="2" fill="url(#ramp)"/>
+    <rect x="76" y="86" width="10" height="12" rx="2" fill="#5BF0B8"/>
+  </g>
+
+  <!-- name and tagline -->
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', 'Liberation Mono', monospace">
+    <text x="292" y="150" font-size="30" fill="#A2A2BE">worxbend /</text>
+    <text x="292" y="212" font-size="54" font-weight="700" fill="#EDEDF7">nerd-fonts-installer-scala</text>
+    <rect x="292" y="236" width="520" height="4" rx="2" fill="url(#ramp)"/>
+    <text x="292" y="296" font-size="32" fill="#CFCBF2">Nerd Fonts, installed the boring way.</text>
+    <g font-size="20" font-weight="700" fill="#13131F">
+      <rect x="292" y="322" width="112" height="34" rx="6" fill="#FF5FAF"/>
+      <text x="348" y="345" text-anchor="middle">Scala 3</text>
+      <rect x="416" y="322" width="204" height="34" rx="6" fill="#46E5E0"/>
+      <text x="518" y="345" text-anchor="middle">GraalVM native</text>
+      <rect x="632" y="322" width="120" height="34" rx="6" fill="#5BF0B8"/>
+      <text x="692" y="345" text-anchor="middle">no JVM</text>
+      <rect x="764" y="322" width="186" height="34" rx="6" fill="#8A7CFF"/>
+      <text x="857" y="345" text-anchor="middle">linux + macOS</text>
+    </g>
+  </g>
+
+  <!-- a small terminal: the dry run -->
+  <g clip-path="url(#terminal)">
+    <rect x="80" y="386" width="1120" height="190" rx="14" fill="#0E0E18"/>
+    <rect x="80" y="386" width="1120" height="30" fill="#1C1B2A"/>
+    <rect x="80" y="415" width="1120" height="1" fill="#2C2A44"/>
+  </g>
+  <rect x="80.5" y="386.5" width="1119" height="189" rx="14" fill="none" stroke="#2C2A44"/>
+  <circle cx="100" cy="401" r="5.5" fill="#FF5F57"/>
+  <circle cx="119" cy="401" r="5.5" fill="#FEBC2E"/>
+  <circle cx="138" cy="401" r="5.5" fill="#28C840"/>
+  <g clip-path="url(#terminal)" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', 'Liberation Mono', monospace" font-size="17" fill="#EDEDF7" xml:space="preserve">
+    <text x="104" y="449"><tspan fill="#54E08A" font-weight="700">$</tspan> nerd-fonts-installer --dry-run</text>
+    <text x="104" y="481"><tspan fill="#8A7CFF">•</tspan> Would install <tspan fill="#5BA8FF" font-weight="700">Hack</tspan> from <tspan fill="#5BA8FF" text-decoration="underline">…/releases/latest/download/Hack.zip</tspan> into <tspan fill="#FF5FAF">~/.local/share/fonts/NerdFonts/Hack</tspan></text>
+    <text x="104" y="513"><tspan fill="#8A7CFF">•</tspan> Would install <tspan fill="#5BA8FF" font-weight="700">Meslo</tspan> from <tspan fill="#5BA8FF" text-decoration="underline">…/releases/latest/download/Meslo.zip</tspan> into <tspan fill="#FF5FAF">~/.local/share/fonts/NerdFonts/Meslo</tspan></text>
+    <text x="104" y="545"><tspan fill="#8A7CFF">↻</tspan> Would refresh font cache for <tspan fill="#FF5FAF">~/.local/share/fonts/NerdFonts</tspan></text>
+  </g>
+
+  <!-- footer -->
+  <rect x="80" y="600" width="1120" height="2" rx="1" fill="url(#ramp)" opacity="0.6"/>
+</svg>
