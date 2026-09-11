@@ -1,7 +1,7 @@
 # Architecture
 
-Status: covers the foundation half of `core` and the `config` module. Agents building `install`, `picker`,
-`cli` and `app` extend this document in the same change that adds their module. The behavioural contract is
+Status: covers the foundation half of `core`, the `config` module and the `picker` module. Agents building
+`install`, `cli` and `app` extend this document in the same change that adds their module. The behavioural contract is
 [`SPEC.md`](SPEC.md); this file records how the code is shaped and which invariants must never move.
 
 ## Module map
@@ -46,6 +46,56 @@ canned response, records requests, serves bodies through the real `BoundedInputS
 Test-side helper: `config.ConfigFiles.write(dir, name, text)` (package-private) writes fixtures into a suite's temp
 directory.
 
+
+### `picker` module — `io.worxbend.nerdfonts.picker`
+
+The Go Bubble Tea program rebuilt as three separable layers. The **model** is an immutable case class with a
+pure `update`; the **view** is a pure function from model and `ColourMode` to a `Frame`; the **terminal** is a
+port with one production adapter. Only `PickerSession` touches all three, and it holds no state of its own.
+
+| Type | Role |
+| --- | --- |
+| `PickerModel.initial(releases, destination, refreshFontCache, iconMode, viewport)` / `update(key)` / `resized(viewport)` / `outcome` | The state machine. `PickerStep` is `ChooseRelease`, `ChooseFamilies(release, families: ListState, selected)`, `Done(release, selected)` or `Cancelled`; each step carries exactly its own state, so a family list cannot exist without the release it came from. The release list lives on the model so going back returns to the same cursor and filter |
+| `PickerKey` | The decoded key vocabulary (`Up … CtrlK`, `Char(c)`); the model never sees bytes |
+| `ListState` (+ `ListItem`, `FilterState`, `FilteredItem`) | bubbles' `list.Model` reduced to pure operations: move/page/first/last, `openFilter`/`typeChar`/`eraseChar`/`applyFilter`, `withItems`, and a scrolling window (`windowStart`/`visibleItems`/`scrolled(pageSize)`) that follows the cursor with the smallest move. `handle(key, pageSize)` is the list's half of the precedence table |
+| `FuzzyMatcher` (`private[picker]`) | Case-insensitive subsequence match over `title + " " + description + " " + value`, ranked by first position then span, stable for ties; positions are kept so the view can underline them |
+| `PickerOutcome.of(release, selected, destination, refreshFontCache)` | `Cancelled` when nothing is selected, else every stem through `FamilyName.parse` (sorted, first failure wins) → `Selected(InstallConfig)` or `Rejected(ConfigValidationError.InvalidFamily)` |
+| `PickerView.render(model, colours): Frame` | The Go `View()`: banner box, list panel, side panel (wide layouts, only when it fits), help footer, and the done screen. `Layout` (`private[picker]`) owns the budget constants; `ListView` renders a `ListState` into exactly `listHeight` rows; `Box` draws a rounded, padded box of an exact size; `TextWidth` is the cell arithmetic (`displayWidth`, ANSI-aware `truncate`, `fit`, `wrap`) |
+| `Palette` (+ `Colour`, `Styles`) | The neon palette, `brandRamp`, `gradientText`/`gradientRule`/`spread`/`statLine`/`progressBar`/`percentage`; every helper takes the `ColourMode` and returns bare text in `Plain` |
+| `IconMode` (+ `parse`, `IconModeError`), `IconSet` (+ `forMode`, `iconForFamily`, `logo`), `FamilyHint.of` | The Go icon tables verbatim (as `\u` escapes so the private-use glyphs survive tooling); `auto` resolves to the Unicode set |
+| `Terminal.withRawMode(body: RawTerminal => A): Either[TerminalError, A]`, `RawTerminal` (`size()`, `readKey()`, `write(frame)`) | The loan-shaped port; raw mode, alternate screen and hidden cursor exist only inside the loan |
+| `SttyTerminal(processRunner, escapeTimeout = 50 ms, streams = TerminalStreams.process)` | The adapter: `stty -g` / `stty raw -echo` / `stty <saved>` through `ProcessRunner` with `Stdin.FromFile(/dev/tty)` and `Stdout.Capture`, never a shell; `stty size` per frame with an 80×24 fallback; frames as `ESC[H` + lines joined by `\r\n` (each followed by `ESC[K`) + `ESC[J`, one flushed write |
+| `KeyDecoder(input, escapeTimeout)` | Bytes → `PickerKey` per the §7 table; the byte after `ESC` is read under `timeoutOption`; unknown CSI/SS3 sequences and supplementary code points are consumed and dropped |
+| `StdinSource.stream` | The one `abandonOnInterruptReads(System.in)` in the process |
+| `PickerSession.run(releases, icons, colours, terminal): Either[PickerError, PickerOutcome]` | render → read → update as a tail-recursive loop; `PickerError.NoReleases` before the terminal is touched, `PickerError.Terminal` when raw mode fails; end of input is a cancellation |
+| `ReleaseLoadingSpinner.around(stderr, colours)(load)` | The stderr spinner block: a daemon ticker fork inside a `supervised` scope whose body is `load()`, so the ticker is cancelled and joined before the final line; the line is redrawn with `\r` and space padding, never `ESC[K` |
+
+Test-side helper, public and reusable from `cli` tests: `picker.ScriptedTerminal(keys, viewport, rawMode)` feeds
+a key script, records every `Frame` and counts raw-mode entries and exits.
+
+**Key precedence** (independent of filter focus, because the model consumes its keys before the list sees them):
+
+1. `q`, `Ctrl-C` cancel on both steps; `Esc` goes back on the families step and cancels on the release step. `Esc`
+   never clears a filter and `q` cannot be typed into one.
+2. Step keys: release — `Enter` chooses the highlighted (filtered) release; families — `Enter` finishes (no-op with
+   nothing selected), `Space` toggles, `a` selects all / clears all, `b` goes back. None can be typed into the family
+   filter; on the release step `Space`, `a` and `b` are ordinary characters.
+3. The list: while browsing `Up`/`k`, `Down`/`j`, `PgUp`/`PgDn`, `Home`/`g`, `End`/`G`, `/` (opens the input with the
+   applied text, cursor reset); while editing, printable characters and `Backspace` re-filter live, `Up`/`Down`/
+   `Tab`/`Shift-Tab`/`Ctrl-K`/`Ctrl-J` apply (an empty or match-less pattern clears instead), paging keys are dead,
+   `Enter` never applies.
+
+**Height budget invariant.** `Layout.listHeight = max(9, safeHeight − chrome)` with `chrome = 16` (full banner) or
+`14` (compact, `safeHeight < 26`), floors 48×24, `bodyWidth ≤ 132`, side panel 34 wide from 104 columns. The banner
+box is 9 (or 7) rows, the list panel `listHeight + 4`, plus two separators and the footer — so a rendered frame is
+exactly `safeHeight` rows. `Box` truncates instead of wrapping (every wrapped row would break the budget); the side
+panel is the only wrapped text and is dropped when taller than the list panel. The size matrix test
+(40×10 … 200×60, both steps) asserts height `== safeHeight` and every line `≤ safeWidth` in both colour modes.
+
+**The CRLF rule.** `stty raw` clears `opost`/`onlcr`, so the terminal no longer expands `\n`. Every line break the
+adapter emits while in raw mode is an explicit `\r\n`, produced in one place (`SttyTerminal.framePaint`); a test
+scans every byte written for a `\n` without a preceding `\r`.
+
 ## Invariants
 
 1. **The family-name trust boundary.** `FamilyName.parse` is the single path-traversal guard. It rejects the
@@ -81,6 +131,17 @@ directory.
     returned as the error, never skipped and never a reason to start the picker (Go: `errors.Is(err, os.ErrNotExist)`).
 11. **Strict keys in both formats.** An unknown key, a repeated YAML key or a value of the wrong shape fails the
     load with the field named; nothing is coerced except the documented YAML scalar rules.
+
+12. **Picker output crosses the `FamilyName` boundary exactly once**, in `PickerOutcome.of`. Stems are display
+    data until then; an unsafe stem is `Rejected`, never a path.
+13. **The picker model is pure and the terminal is a loan.** `PickerModel.update` is a total function of model and
+    key; `Terminal.withRawMode` restores `stty` settings, the alternate screen and the cursor in a `finally`, so an
+    interrupt unwinding through a read leaves the terminal usable. Nothing in `picker` reads `System.in` except
+    `StdinSource`, once.
+14. **Frames fit.** `PickerView.render` never yields more than `safeHeight` rows or a line wider than `safeWidth`;
+    any new banner row or panel must be paid for in `Layout`'s chrome constants.
+15. **Plain means plain.** With `ColourMode.Plain` no picker or spinner output contains `ESC[`; the alternate-screen,
+    cursor and clear sequences are the terminal adapter's, emitted in raw mode only.
 
 ## Conventions that reviewers enforce
 
@@ -127,3 +188,20 @@ one concern per function; scaladoc on public types explains why, not what.
 - **`Environment` is the only input to discovery.** `ConfigLocations` never reads `sys.env`; `$XDG_CONFIG_HOME` counts
   only when absolute (Go `filepath.IsAbs`), a missing home silently drops the config-home half, a missing working
   directory is `ConfigError.NoWorkingDirectory` rendered `locate current directory: <cause>`.
+- **`PickerStep.Cancelled` is a fourth step, not a flag.** The spec lists three steps; a terminal `Cancelled` case lets
+  `update` ignore every key after the end without a separate boolean and makes `outcome` a plain `match`.
+- **The list window scrolls; the page indicator counts pages.** `ListState` keeps a window offset that follows the
+  cursor by the smallest move (one row per `j`/`k`), which reads better than bubbles' page flips; the pagination row
+  shows the cursor's page (`●○○`, or `p/N` above ten pages) as a position indicator.
+- **`Box` truncates with `…`, lipgloss wraps.** Wrapping would silently add rows and break the height budget that the Go
+  tool only holds by luck of its copy lengths; the side-panel note is wrapped explicitly, everything else is cut.
+- **`KeyDecoder.Char` is a BMP `Char`.** A supplementary code point (emoji) is dropped rather than split into
+  surrogates; family names and filter text never need one.
+- **Unknown escape sequences are consumed whole.** A modified arrow (`ESC [ 1 ; 5 A`) is read to its final byte and
+  dropped, so its parameter bytes cannot leak into the filter as text.
+- **The spinner pads with spaces instead of `ESC[K`.** Keeps `Plain` output free of control sequences and makes the
+  final line testable as text.
+- **`picker.test` depends on `core.test`** (build.mill) so `SttyTerminal` is tested against the shared
+  `FakeProcessRunner` rather than a second fake.
+- **Go's `h/l/f/d/u` paging aliases are not bound** (§7 deviation, kept): `h`/`l` would collide with typing and the
+  remaining aliases add nothing over `PgUp`/`PgDn`.
