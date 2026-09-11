@@ -57,6 +57,14 @@ final class CliSuite extends munit.FunSuite:
     assert(result.out.contains("-config, --config=<path>"), result.out)
     assertEquals(result.err, "")
 
+  test("--help lists the options in Go's order with help last"):
+    val out     = run(deps(), "--help").out
+    val flags   =
+      Vector("--config", "--dry-run", "--font-names", "--icons", "--interactive", "--version", "--help")
+    val offsets = flags.map(flag => out.indexOf(s", $flag"))
+    assert(offsets.forall(_ >= 0), out)
+    assertEquals(offsets, offsets.sorted, out)
+
   test("-h and -help are the same as --help"):
     assertEquals(run(deps(), "-h").out, run(deps(), "--help").out)
     assertEquals(run(deps(), "-help").code, 0)
@@ -289,7 +297,10 @@ final class CliSuite extends munit.FunSuite:
     val inter   = family("Inter")
     val failure = InstallError.Family(
       inter,
-      FamilyInstallError.Download(ReleaseUrls.download(ReleaseSelector.Latest, inter), HttpError.Status(404)),
+      FamilyInstallError.Download(
+        ReleaseUrls.github.download(ReleaseSelector.Latest, inter),
+        HttpError.Status(404),
+      ),
     )
     val result  = run(withConfig().copy(installFonts = (_, _) => Left(failure)), "--config", "fonts.yaml")
     assertEquals(result.code, 1)
@@ -321,7 +332,11 @@ final class CliSuite extends munit.FunSuite:
       request.families.foreach(name =>
         sink.emit(
           InstallEvent
-            .WouldInstall(name, ReleaseUrls.download(request.selector, name), request.root / name.value),
+            .WouldInstall(
+              name,
+              ReleaseUrls.github.download(request.selector, name),
+              request.root / name.value,
+            ),
         ),
       )
       sink.emit(InstallEvent.FontCacheUnavailable)
@@ -334,3 +349,13 @@ final class CliSuite extends munit.FunSuite:
     )
     assertEquals(result.err, "• fc-cache is not available; skipping font cache refresh.\n")
     result.discard
+
+  test("the download temp directory is $TMPDIR when it is set"):
+    assertEquals(
+      Cli.tempDir(environment(Map("TMPDIR" -> "/scratch/downloads"))),
+      os.Path("/scratch/downloads"),
+    )
+
+  test("the download temp directory falls back to java.io.tmpdir when $TMPDIR is blank"):
+    val expected = os.Path(java.nio.file.Path.of(System.getProperty("java.io.tmpdir")).toAbsolutePath)
+    assertEquals(Cli.tempDir(environment(Map("TMPDIR" -> ""))), expected)

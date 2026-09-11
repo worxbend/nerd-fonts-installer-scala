@@ -9,6 +9,7 @@ import java.nio.file.Path
 
 import scala.annotation.unused
 
+import ox.pipe
 import picocli.CommandLine
 import picocli.CommandLine.Command
 import picocli.CommandLine.Help
@@ -29,7 +30,7 @@ import picocli.CommandLine.ParseResult
 object Cli:
   /** The production entry: real environment, JDK adapters, the system temp directory for downloads. */
   def run(args: Array[String], out: PrintWriter, err: PrintWriter): Int =
-    run(args, out, err, AppDependencies.production(Environment.System, systemTempDir))
+    run(args, out, err, AppDependencies.production(Environment.System, tempDir(Environment.System)))
 
   def run(args: Array[String], out: PrintWriter, err: PrintWriter, deps: AppDependencies): Int =
     commandLine(deps, out, err).execute(args*)
@@ -79,14 +80,24 @@ object Cli:
     result.left.foreach(failure => err.println(failure.render))
     ExitCode.of(result)
 
-  // The composition root is the one place allowed to read a system property; `java.io.tmpdir` is where the
-  // JDK itself would put a temp file, made absolute in case the property is relative.
-  private def systemTempDir: os.Path = os.Path(Path.of(System.getProperty("java.io.tmpdir")).toAbsolutePath)
+  // Go's `os.CreateTemp("", …)` honours `$TMPDIR`; the JDK's `java.io.tmpdir` is fixed at `/tmp` on Linux, so
+  // the variable is consulted first and the property is only the fallback. The composition root is the one
+  // place allowed to read a system property; the path is made absolute in case either value is relative.
+  private[cli] def tempDir(env: Environment): os.Path = env
+    .variable(Cli.tempDirVariable)
+    .filter(_.nonEmpty)
+    .getOrElse(System.getProperty("java.io.tmpdir"))
+    .pipe(raw => os.Path(Path.of(raw).toAbsolutePath))
+
+  private val tempDirVariable = "TMPDIR"
 
 /**
  * The picocli root command. It does nothing but collect option values; picocli binds them by calling the
  * annotated setters, which is why this is the one class in the codebase allowed a `var` (SPEC §2). The
  * `--icons` value is kept raw because the reference validates it after parsing and quotes the original text.
+ * Every option carries an explicit `order`: picocli lists setter-bound options in reflection order, which the
+ * JVM does not define, so without it the usage text could differ between two builds. The order is Go's
+ * (`flag` sorts alphabetically), with `--help` last because Go does not list it at all.
  */
 @Command(
   name = "nerd-fonts-installer",
@@ -103,6 +114,7 @@ final private[cli] class RootCommand:
 
   @CliOption(
     names = Array("-config", "--config"),
+    order = 0,
     paramLabel = "<path>",
     description = Array(
       "config file; when omitted, discover an app-named config in CWD or the user config directory",
@@ -112,12 +124,14 @@ final private[cli] class RootCommand:
 
   @CliOption(
     names = Array("-dry-run", "--dry-run"),
+    order = 1,
     description = Array("print planned downloads without installing fonts"),
   )
   def setDryRun(value: Boolean): Unit = draft = draft.copy(dryRun = DryRun.fromBoolean(value))
 
   @CliOption(
     names = Array("-font-names", "--font-names"),
+    order = 2,
     description = Array("print YAML-ready Nerd Font family names and exit"),
   )
   def setFontNames(value: Boolean): Unit =
@@ -125,12 +139,14 @@ final private[cli] class RootCommand:
 
   @CliOption(
     names = Array("-interactive", "--interactive"),
+    order = 4,
     description = Array("start the terminal picker when no config file is found"),
   )
   def setInteractive(value: Boolean): Unit = draft = draft.copy(interactive = Interactive.fromBoolean(value))
 
   @CliOption(
     names = Array("-icons", "--icons"),
+    order = 3,
     paramLabel = "<mode>",
     description = Array("interactive icon mode: auto, nerd, unicode, or ascii (default: auto)"),
   )
@@ -138,6 +154,7 @@ final private[cli] class RootCommand:
 
   @CliOption(
     names = Array("-version", "--version"),
+    order = 5,
     versionHelp = true,
     description = Array("print version information and exit"),
   )
@@ -145,6 +162,7 @@ final private[cli] class RootCommand:
 
   @CliOption(
     names = Array("-h", "-help", "--help"),
+    order = 6,
     usageHelp = true,
     description = Array("print this help and exit"),
   )
