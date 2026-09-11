@@ -3,6 +3,7 @@ package io.worxbend.nerdfonts.process
 import io.worxbend.nerdfonts.environment.Environment
 
 import java.nio.file.attribute.PosixFilePermission
+
 import scala.jdk.CollectionConverters.*
 
 /** Real subprocesses, but only POSIX-standard ones (`echo`, `cat`, `false`, `ls`) and never through a shell. */

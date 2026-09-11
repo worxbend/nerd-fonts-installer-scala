@@ -1,12 +1,13 @@
 package io.worxbend.nerdfonts.http
 
-import com.sun.net.httpserver.HttpExchange
-import com.sun.net.httpserver.HttpServer
-
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.util.concurrent.atomic.AtomicReference
+
 import scala.util.Using
+
+import com.sun.net.httpserver.HttpExchange
+import com.sun.net.httpserver.HttpServer
 
 /**
  * The JDK adapter against a loopback `HttpServer`: no network leaves the machine, but the real
