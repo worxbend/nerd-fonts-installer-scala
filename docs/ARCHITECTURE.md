@@ -409,3 +409,8 @@ one concern per function; scaladoc on public types explains why, not what.
   every architecture (it is already AArch64's default, so the arm64 targets are unaffected) and matches the Go
   reference's `GOAMD64=v1`. A CPU-specific `-march` would need a second matrix leg per amd64 target to ship both
   a fast and a compatible binary; one baseline build is the smaller surface.
+- **The Linux binaries stay dynamically linked against glibc/libz, unlike the static Go reference.** GraalVM's
+  static-linking path needs a musl toolchain installed on the runner and produces a separate, less-tested code
+  path; the tradeoff accepted here is a documented minimum of glibc ≥ 2.34 (Ubuntu 22.04+, Debian 12+, RHEL/Rocky
+  9+) for `linux-amd64`/`linux-arm64`, checked with `ldd`/`objdump -T` against each release build. Revisit if a
+  supported-OS report comes in from an older distribution.
