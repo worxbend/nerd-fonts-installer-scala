@@ -7,9 +7,11 @@ import io.worxbend.nerdfonts.fonts.ReleaseSelector
 import io.worxbend.nerdfonts.http.ByteLimit
 import io.worxbend.nerdfonts.http.HttpClient
 import io.worxbend.nerdfonts.http.HttpError
+import io.worxbend.nerdfonts.http.HttpRequest
 import io.worxbend.nerdfonts.http.InMemoryHttpClient
 import io.worxbend.nerdfonts.http.InMemoryHttpClient.Body
 import io.worxbend.nerdfonts.http.InMemoryHttpClient.Response
+import io.worxbend.nerdfonts.http.Overflow
 import io.worxbend.nerdfonts.http.Url
 import io.worxbend.nerdfonts.process.ExitStatus
 import io.worxbend.nerdfonts.process.FakeProcessRunner
@@ -20,6 +22,7 @@ import io.worxbend.nerdfonts.releases.ReleaseUrls
 import java.io.IOException
 import java.io.InputStream
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
 import scala.annotation.tailrec
@@ -139,14 +142,36 @@ final class FontInstallerSuite extends munit.FunSuite:
   workspace.test(
     "installs many families concurrently with every line intact and each Started before its Installed",
   ): ws =>
-    val root     = ws / "fonts"
-    val names    = Vector("Hack", "JetBrainsMono", "FiraCode", "Inter", "Noto")
-    val families = names.map(family)
-    val sink     = RecordingSink()
-    assertEquals(
-      installer(ws, InMemoryHttpClient(routes(noManifest, names*))).install(request(root, families), sink),
-      Right(()),
-    )
+    val root              = ws / "fonts"
+    val names             = Vector("Hack", "JetBrainsMono", "FiraCode", "Inter", "Noto")
+    val families          = names.map(family)
+    val sink              = RecordingSink()
+    val downloads         = names.map(downloadUrl).toSet
+    val canned            = InMemoryHttpClient(routes(noManifest, names*))
+    val inFlight          = AtomicInteger(0)
+    val release           = CountDownLatch(1)
+    // Bodies elsewhere in this suite are four-byte zips that complete in microseconds, so the workers rarely
+    // overlap and the "unsynchronised RecordingSink shows corruption" invariant is barely exercised. Gating
+    // every download behind one latch, opened only once all four workers have reached it, forces them to
+    // finish together instead.
+    val gated: HttpClient = new HttpClient:
+      def get[A](request: HttpRequest, limit: ByteLimit, overflow: Overflow = Overflow.Reject)(
+          consume: InputStream => A,
+      ): Either[HttpError, A] =
+        if downloads.contains(request.url) then
+          inFlight.incrementAndGet()
+          release.await()
+        canned.get(request, limit, overflow)(consume)
+    val outcome           = AtomicReference[Option[Either[InstallError, Unit]]](None)
+    val worker            = Thread: () =>
+      outcome.set(Some(installer(ws, gated).install(request(root, families), sink)))
+    worker.start()
+    awaitCondition("four downloads to be in flight", System.nanoTime() + 5.seconds.toNanos):
+      inFlight.get() >= math.min(FontInstaller.maxConcurrentInstalls, names.size)
+    release.countDown()
+    worker.join(5.seconds.toMillis)
+    assert(!worker.isAlive, "install did not finish within five seconds of releasing the gate")
+    assertEquals(outcome.get(), Some(Right(())))
     families.foreach: name =>
       assertEquals(os.read(root / name.value / s"${name.value}.ttf"), "font")
       val started   = sink.events.indexOf(
@@ -155,6 +180,7 @@ final class FontInstallerSuite extends munit.FunSuite:
       val installed = sink.events.indexOf(InstallEvent.Installed(name, root / name.value))
       assert(started >= 0 && installed > started, s"$name: started=$started installed=$installed")
     assertEquals(sink.events.size, 1 + 2 * names.size)
+    assertEquals(sink.events.distinct.size, sink.events.size)
 
   workspace.test(
     "one failing family fails the run, names the family, and leaves the finished family installed",
@@ -189,6 +215,42 @@ final class FontInstallerSuite extends munit.FunSuite:
     )
     assertEquals(os.read(root / "Hack" / "Hack.ttf"), "font")
     assert(!os.exists(root / "Inter"))
+
+  workspace.test(
+    "a failing sibling interrupts a still-downloading family, which cleans up and is not installed",
+  ): ws =>
+    val root    = ws / "fonts"
+    val inter   = family("Inter")
+    val http    = InMemoryHttpClient(
+      Map(
+        manifestUrl          -> noManifest,
+        downloadUrl("Hack")  -> Response.Served(200, Map.empty, Body.blockingUntilInterrupted),
+        downloadUrl("Inter") -> Response.status(404),
+      ),
+    )
+    val outcome = AtomicReference[Option[Either[InstallError, Unit]]](None)
+    val worker  = Thread: () =>
+      outcome.set(Some(installer(ws, http).install(request(root, Vector(hack, inter)), RecordingSink())))
+    worker.start()
+    worker.join(5.seconds.toMillis)
+    assert(!worker.isAlive, "install did not finish within five seconds of Inter's failure")
+    assertEquals(
+      outcome.get(),
+      Some(
+        Left(
+          InstallError.Family(
+            inter,
+            FamilyInstallError.Download(
+              ReleaseUrls.github.download(ReleaseSelector.Latest, inter),
+              HttpError.Status(404),
+            ),
+          ),
+        ),
+      ),
+    )
+    assertEquals(tempZips(ws), Seq.empty)
+    assertEquals(stagingDirs(root), Seq.empty)
+    assert(!os.exists(root / "Hack"))
 
   workspace.test("keeps the existing family directory when extraction fails"): ws =>
     val root   = ws / "fonts"
