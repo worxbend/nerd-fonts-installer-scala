@@ -2,6 +2,8 @@ package io.worxbend.nerdfonts.picker
 
 import scala.annotation.tailrec
 
+import ox.pipe
+
 /**
  * Terminal cell arithmetic on possibly styled text.
  *
@@ -144,5 +146,3 @@ private[picker] object TextWidth:
 
   private def isWide(codePoint: Int): Boolean =
     wideRanges.exists((from, to) => codePoint >= from && codePoint <= to)
-
-  extension [A](value: A) private def pipe[B](f: A => B): B = f(value)
