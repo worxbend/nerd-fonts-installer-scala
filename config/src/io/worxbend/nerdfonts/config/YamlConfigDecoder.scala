@@ -14,17 +14,30 @@ import org.virtuslab.yaml.parseYaml
  * or not. Tags are deliberately ignored except for null: what the user typed matters, not what YAML would infer.
  */
 object YamlConfigDecoder:
-  private val trueWords  = Set("true", "yes", "on", "y")
-  private val falseWords = Set("false", "no", "off", "n")
+  private val trueWords     = Set("true", "yes", "on", "y")
+  private val falseWords    = Set("false", "no", "off", "n")
+  private val byteOrderMark = "\uFEFF"
+  private val commentStart  = "#"
 
   def decode(path: os.Path, text: String): Either[ConfigError, ConfigDocument] =
-    // scala-yaml reports "no node" for an empty stream; §4 defines it as a document with every key absent.
-    if text.trim.isEmpty then Right(ConfigDocument.empty)
+    val stream = withoutByteOrderMark(text)
+    // scala-yaml reports "Expected YAML node, but found: StreamEnd" for a stream without a node; §4 defines such
+    // a file as a document with every key absent, so validation can name what is actually missing.
+    if hasNoNode(stream) then Right(ConfigDocument.empty)
     else
-      parseYaml(text).left
+      parseYaml(stream).left
         .map(error => ConfigError.Parse(path, describe(error)))
         .map(node)
         .flatMap(ConfigFieldDecoder.decode(path, _))
+
+  // The YAML spec ignores a byte-order mark at the start of a stream and yaml.v3 does so; scala-yaml would read
+  // it as the first character of the first key and the file's `families` would be reported as an unknown field.
+  private def withoutByteOrderMark(text: String): String = text.stripPrefix(byteOrderMark)
+
+  // A line whose first non-blank character is `#` is a comment unless a scalar was opened on an earlier line, and
+  // a stream made only of blank and comment lines never opens one, so this test is exact rather than heuristic.
+  private def hasNoNode(text: String): Boolean =
+    text.linesIterator.map(_.trim).forall(line => line.isEmpty || line.startsWith(commentStart))
 
   private def node(yaml: Node): ConfigNode = yaml match
     case scalar: Node.ScalarNode     =>

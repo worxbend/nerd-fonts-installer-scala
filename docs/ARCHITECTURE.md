@@ -114,9 +114,12 @@ one concern per function; scaladoc on public types explains why, not what.
 - **A `null` list entry follows each reference decoder.** yaml.v3 drops a null element of a `[]string`, so the shared
   decoder drops `ConfigNode.Null` entries; `encoding/json` stores the zero string, so the JSON adapter substitutes
   `""` before the tree reaches the decoder and validation reports `font family names cannot be empty`.
-- **Empty YAML is an empty document; a comment-only file is a parse error.** §4 defines an empty document as "every
-  key absent" (validation then says `at least one font family is required`), although Go reports `EOF`. scala-yaml
-  cannot tell a comment-only stream from a syntax error, so that case stays an error, as it is in Go.
+- **A YAML stream without a node is the empty document.** §4 defines an empty document as "every key absent"
+  (validation then says `at least one font family is required`), although Go reports `parse <path>: EOF`. A blank
+  file and a file made only of comments both qualify; scala-yaml reports both as `Expected YAML node, but found:
+  StreamEnd`, so `YamlConfigDecoder` recognises them before parsing (a line whose first non-blank character is `#`
+  can only be a comment when no scalar was opened earlier, so the check is exact). A leading UTF-8 byte-order mark
+  is skipped, as the YAML spec requires and yaml.v3 does; JSON keeps `encoding/json`'s behaviour of rejecting it.
 - **Repeated YAML keys are errors.** scala-yaml keeps repeated keys as separate mapping entries, which lets the loader
   reproduce yaml.v3's `mapping key "x" already defined`; ujson keeps the last value, matching `encoding/json`.
 - **`multiple json values` is slightly broader than Go.** ujson rejects any trailing content after the first value

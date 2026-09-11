@@ -55,6 +55,7 @@ final class YamlConfigDecoderSuite extends munit.FunSuite:
 
   test("a null release leaves the key unset so the default applies"):
     assertEquals(decode("release: ~\nfamilies: [Hack]").map(_.release), Right(None))
+    assertEquals(decode("release: null\nfamilies: [Hack]").map(_.release), Right(None))
     assertEquals(decode("release:\nfamilies: [Hack]").map(_.release), Right(None))
 
   test("a quoted empty release is the empty string, not an unset key"):
@@ -101,3 +102,23 @@ final class YamlConfigDecoderSuite extends munit.FunSuite:
 
   test("only the first document of a multi-document stream is read"):
     assertEquals(decode("release: a\n---\nrelease: b\n").map(_.release), Right(Some("a")))
+
+  test("quoted null words are text, as yaml.v3 decodes them into a string"):
+    assertEquals(decode("families: ['null', \"~\"]").map(_.families), Right(Some(Vector("null", "~"))))
+
+  test("a block-style family list decodes in document order"):
+    assertEquals(
+      decode("families:\n  - Hack\n  - JetBrainsMono\n").map(_.families),
+      Right(Some(Vector("Hack", "JetBrainsMono"))),
+    )
+
+  test("a comment-only document is empty, like a blank one"):
+    assertEquals(decode("# copy config.example.yaml here\n\n# and fill it in\n"), Right(ConfigDocument.empty))
+
+  test("a leading byte-order mark is skipped rather than read into the first key"):
+    assertEquals(decode("\uFEFFfamilies: [Hack]\n").map(_.families), Right(Some(Vector("Hack"))))
+
+  test("CRLF line endings decode like LF"):
+    val document = decode("release: v3.4.0\r\nfamilies:\r\n  - Hack\r\n")
+    assertEquals(document.map(_.release), Right(Some("v3.4.0")))
+    assertEquals(document.map(_.families), Right(Some(Vector("Hack"))))

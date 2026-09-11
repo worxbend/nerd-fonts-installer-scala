@@ -89,3 +89,9 @@ final class JsonConfigDecoderSuite extends munit.FunSuite:
 
   test("a repeated key keeps the last value like encoding/json"):
     assertEquals(decode("""{"release": "a", "release": "b"}""").map(_.release), Right(Some("b")))
+
+  test("a leading byte-order mark is a parse error, as in encoding/json"):
+    assert(decode("\uFEFF{\"families\": [\"Hack\"]}").left.exists {
+      case ConfigError.Parse(_, _) => true
+      case _                       => false
+    })

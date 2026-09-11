@@ -136,3 +136,12 @@ final class ConfigLoaderSuite extends munit.FunSuite:
       clue = result,
     )
     assert(result.left.map(_.render).left.exists(_.startsWith(s"parse ${dir / "fonts.yaml"}: ")))
+
+  test("the shipped config.example.yaml loads with the values it documents"):
+    val repoRoot = sys.props.get("nerdfonts.repoRoot").map(os.Path(_))
+    val example  = repoRoot.map(_ / "config.example.yaml").getOrElse(fail("nerdfonts.repoRoot is not set"))
+    val config   = ConfigLoader.load(example)
+    assertEquals(config.map(_.selector), Right(ReleaseSelector.Latest))
+    assertEquals(config.map(_.destination.value), Right("~/.local/share/fonts/NerdFonts"))
+    assertEquals(config.map(_.refreshFontCache), Right(RefreshFontCache.Enabled))
+    assertEquals(families(config), Right(Vector("JetBrainsMono", "Hack", "FiraCode", "Meslo")))
