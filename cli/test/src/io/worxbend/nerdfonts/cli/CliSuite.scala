@@ -259,6 +259,26 @@ final class CliSuite extends munit.FunSuite:
     assertEquals(seen.get(), Some(os.Path("/env/fonts.yaml")))
     assert(done.get().isDefined)
 
+  test("--config wins over the environment override when both are set"):
+    val seen   = AtomicReference(Option.empty[os.Path])
+    val base   = deps(environment(Map(envVariable -> "/env/fonts.yaml"))).copy(
+      loadConfig = path =>
+        seen.set(Some(path))
+        Right(hackConfig)
+      ,
+      discoverConfig = () => fail("discovery must not run when either the flag or the override is set"),
+    )
+    val result = run(base, "--config", "flag.yaml")
+    assertEquals(result.code, 0)
+    assertEquals(seen.get(), Some(cwd / "flag.yaml"))
+
+  test("a --config failure alongside a set environment variable echoes the flag path"):
+    val broken = deps(environment(Map(envVariable -> "/env/fonts.yaml")))
+      .copy(loadConfig = path => Left(ConfigError.NotFound(path)))
+    val result = run(broken, "--config", "flag.yaml")
+    assertEquals(result.code, 1)
+    assertEquals(result.err, "load config flag.yaml: open flag.yaml: no such file or directory\n")
+
   test("a cancelled picker exits 0 after the interactive banner"):
     val result = run(deps().copy(isTerminal = () => true), "--interactive")
     assertEquals(result.code, 0)

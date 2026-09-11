@@ -68,6 +68,27 @@ final class ApplicationSuite extends munit.FunSuite:
       Left(AppFailure.Config(ConfigError.NoWorkingDirectory(cause), "fonts.yaml")),
     )
 
+  test("an explicit --config flag wins over a set environment variable"):
+    val seen = AtomicReference(Option.empty[os.Path])
+    val env  = environment(Map(ConfigLocations.configVariable -> "/env/fonts.yaml"))
+    val d    = deps(env).copy(
+      loadConfig = path =>
+        seen.set(Some(path))
+        Right(hackConfig)
+      ,
+      discoverConfig = () => fail("discovery must not run when either the flag or the override is set"),
+    )
+    assertEquals(application(options(explicitConfig = Some("flag.yaml")), d), Right(AppOutcome.Installed))
+    assertEquals(seen.get(), Some(cwd / "flag.yaml"))
+
+  test("a config failure with both --config and the env var set names the flag path"):
+    val env = environment(Map(ConfigLocations.configVariable -> "/env/fonts.yaml"))
+    val d   = deps(env).copy(loadConfig = path => Left(ConfigError.NotFound(path)))
+    assertEquals(
+      application(options(explicitConfig = Some("flag.yaml")), d),
+      Left(AppFailure.Config(ConfigError.NotFound(cwd / "flag.yaml"), "flag.yaml")),
+    )
+
   test("a blank environment override falls through to discovery"):
     val env = environment(Map(ConfigLocations.configVariable -> "   "))
     val d   = deps(env).copy(discoverConfig = () => Right(Some(DiscoveredConfig(cwd / "x.yaml", hackConfig))))
