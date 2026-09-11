@@ -145,7 +145,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          export NERD_FONTS_INSTALLER_BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          NERD_FONTS_INSTALLER_BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          export NERD_FONTS_INSTALLER_BUILD_DATE
           ref="$(./mill --no-daemon show app.nativeImage | sed -n 's/^"\(.*\)"$/\1/p' | tail -n 1)"
           path="${ref##*:}"
           test -x "${path}"
