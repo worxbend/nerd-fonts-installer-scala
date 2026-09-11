@@ -58,10 +58,11 @@ final class FontInstallerSuite extends munit.FunSuite:
       limits: SizeLimits = SizeLimits.default,
       refresher: FontCacheRefresher = noFcCache,
       familyDeadline: FiniteDuration = FontInstaller.defaultFamilyDeadline,
+      manifestTimeout: FiniteDuration = FontInstaller.defaultManifestTimeout,
   ): FontInstaller =
     val tmp = ws / "tmp"
     os.makeDir.all(tmp)
-    FontInstaller(http, tmp, refresher, limits, familyDeadline)
+    FontInstaller(http, tmp, refresher, limits, familyDeadline, manifestTimeout)
 
   private def tempZips(ws: os.Path): Seq[String] = os.list(ws / "tmp").map(_.last)
 
@@ -433,3 +434,22 @@ final class FontInstallerSuite extends munit.FunSuite:
     assertEquals(rendered(result), Left("install Nerd Font family Hack: timed out after 200 milliseconds"))
     assertEquals(tempZips(ws), Seq.empty)
     assertEquals(stagingDirs(root), Seq.empty)
+
+  workspace.test("a stalled manifest fetch warns with the timeout and proceeds"): ws =>
+    val root = ws / "fonts"
+    val sink = RecordingSink()
+    val http = InMemoryHttpClient(
+      Map(
+        manifestUrl         -> Response.Served(200, Map.empty, Body.blockingUntilInterrupted),
+        downloadUrl("Hack") -> Response.ok(FontZips.family("Hack")),
+      ),
+    )
+    assertEquals(
+      installer(ws, http, manifestTimeout = 100.millis).install(request(root, Vector(hack)), sink),
+      Right(()),
+    )
+    assertEquals(
+      sink.events.headOption,
+      Some(InstallEvent.ChecksumManifestUnavailable("timed out after 100 milliseconds")),
+    )
+    assert(os.exists(root / "Hack" / "Hack.ttf"))
