@@ -31,20 +31,20 @@ final class SttyTerminal(
 ) extends Terminal:
   import SttyTerminal.*
 
-  def withRawMode[A](body: RawTerminal => A): Either[TerminalError, A] =
-    for
-      saved <- stty("-g")
-      _     <- stty("raw", "-echo")
-    yield restoringAfter(saved)(body(RawSession()))
+  // `saved` is captured before anything else runs, so it must be restored on every exit from this point on:
+  // a normal return, the body throwing, or `stty raw -echo` itself throwing (an `InterruptedException` can
+  // surface from `Process.waitFor()` after the child has already applied the termios change but before our
+  // thread observes it returning) all reach the outer `finally`. The alternate screen and cursor sequences
+  // stay inside the success branch so they are never emitted when raw mode was not actually entered.
+  def withRawMode[A](body: RawTerminal => A): Either[TerminalError, A] = stty("-g").flatMap: saved =>
+    try stty("raw", "-echo").map(_ => withScreen(body(RawSession())))
+    finally stty(saved).discard
 
-  private def restoringAfter[A](saved: String)(session: => A): A =
+  private def withScreen[A](session: => A): A =
     try
       emit(enterScreen)
       session
-    finally
-      emit(leaveScreen)
-      // Nothing useful can be done if restoring fails; the terminal is already being handed back.
-      stty(saved).discard
+    finally emit(leaveScreen)
 
   final private class RawSession extends RawTerminal:
     private val decoder = KeyDecoder(streams.input, escapeTimeout)

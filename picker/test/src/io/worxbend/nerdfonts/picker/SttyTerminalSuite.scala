@@ -3,6 +3,8 @@ package io.worxbend.nerdfonts.picker
 import io.worxbend.nerdfonts.process.FakeProcessRunner
 import io.worxbend.nerdfonts.process.FakeProcessRunner.Script
 import io.worxbend.nerdfonts.process.ProcessError
+import io.worxbend.nerdfonts.process.ProcessResult
+import io.worxbend.nerdfonts.process.ProcessRunner
 import io.worxbend.nerdfonts.process.ProcessSpec
 import io.worxbend.nerdfonts.process.Stdin
 import io.worxbend.nerdfonts.process.Stdout
@@ -28,7 +30,18 @@ final class SttyTerminalSuite extends munit.FunSuite:
     ) ++ scripts,
   )
 
-  final private class Harness(processes: FakeProcessRunner, input: String = ""):
+  /**
+   * Answers `throwing` with an `InterruptedException` instead of delegating, to script a process call that
+   * is interrupted mid-`waitFor` rather than one that fails normally.
+   */
+  final private class ThrowingOnCommand(delegate: ProcessRunner, throwing: Vector[String])
+      extends ProcessRunner:
+    def run(spec: ProcessSpec): Either[ProcessError, ProcessResult] =
+      if spec.command == throwing then throw InterruptedException("interrupted")
+      else delegate.run(spec)
+    def lookPath(name: String): Option[os.Path]                     = delegate.lookPath(name)
+
+  final private class Harness(processes: ProcessRunner, input: String = ""):
     val output          = ByteArrayOutputStream()
     val terminal        = SttyTerminal(
       processes,
@@ -139,18 +152,41 @@ final class SttyTerminalSuite extends munit.FunSuite:
       Left(TerminalError.RawModeUnavailable("stty -g: exit status 1")),
     )
 
-  test("a failure entering raw mode is reported and nothing is restored"):
+  test("a failure entering raw mode is reported and the alternate screen is never entered"):
     val processes = FakeProcessRunner(
       Vector(
         Script.succeeding(Vector("stty", "-g"), stdout = saved),
         Script.failing(Vector("stty", "raw", "-echo"), ProcessError.Failed("stty", "inappropriate ioctl")),
+        Script.succeeding(Vector("stty", saved)),
       ),
     )
+    val harness   = Harness(processes)
     assertEquals(
-      Harness(processes).terminal.withRawMode(_ => ()),
+      harness.terminal.withRawMode(_ => ()),
       Left(TerminalError.RawModeUnavailable("stty: inappropriate ioctl")),
     )
-    assertEquals(processes.calls.size, 2)
+    // The restore always runs once `-g` has succeeded (harmless when raw mode was never entered), but the
+    // alternate-screen and cursor sequences are only ever emitted from the success branch.
+    assertEquals(
+      processes.calls.map(_.command),
+      Vector(Vector("stty", "-g"), Vector("stty", "raw", "-echo"), Vector("stty", saved)),
+    )
+    assertEquals(harness.written, "")
+
+  test("an interrupt while entering raw mode still restores the saved settings"):
+    val processes = runner()
+    val throwing  = ThrowingOnCommand(processes, Vector("stty", "raw", "-echo"))
+    val harness   = Harness(throwing)
+    // `InterruptedException` is not `NonFatal`, so munit's `intercept` will not catch it (it would rethrow
+    // and fail the test instead); catch it by hand the way the rest of the codebase asserts on interrupts.
+    val thrown    =
+      try
+        harness.terminal.withRawMode(_ => ()).discard
+        None
+      catch case interrupted: InterruptedException => Some(interrupted)
+    assert(thrown.isDefined, "expected the InterruptedException to propagate")
+    assertEquals(processes.calls.last.command, Vector("stty", saved))
+    assertEquals(harness.written, "")
 
   test("terminal errors render with the raw-mode prefix"):
     assertEquals(
