@@ -23,21 +23,31 @@ object DownloadUrl:
     def value: String = url
 
 /**
- * Builds the GitHub release asset URLs. Both segments are escaped with Go's `url.PathEscape` semantics so
- * the tool requests byte-for-byte the same URLs as the reference for tags and families containing spaces.
+ * Builds the release asset URLs below one `releases` base. Both segments are escaped with Go's
+ * `url.PathEscape` semantics so the tool requests byte-for-byte the same URLs as the reference for tags and
+ * families containing spaces.
+ *
+ * The base is a value rather than a constant so the composition root can point a whole run at a local stub
+ * (the CI interrupt smoke test); every production path uses [[ReleaseUrls.github]].
  */
-object ReleaseUrls:
-  private val releasesBase = "https://github.com/ryanoasis/nerd-fonts/releases"
-  private val checksumFile = "SHA-256.txt"
-
+final class ReleaseUrls(base: Url):
   def download(selector: ReleaseSelector, family: FamilyName): DownloadUrl =
     DownloadUrl(asset(selector, s"${PathEscape.escape(family.value)}.zip"))
 
-  def checksums(selector: ReleaseSelector): Url = Url(asset(selector, checksumFile))
+  def checksums(selector: ReleaseSelector): Url = Url(asset(selector, ReleaseUrls.checksumFile))
 
   private def asset(selector: ReleaseSelector, file: String): String = selector match
-    case ReleaseSelector.Latest      => s"$releasesBase/latest/download/$file"
-    case ReleaseSelector.Tagged(tag) => s"$releasesBase/download/${PathEscape.escape(tag.value)}/$file"
+    case ReleaseSelector.Latest      => s"${base.value}/latest/download/$file"
+    case ReleaseSelector.Tagged(tag) => s"${base.value}/download/${PathEscape.escape(tag.value)}/$file"
+
+object ReleaseUrls:
+  private val checksumFile = "SHA-256.txt"
+
+  /** The real Nerd Fonts release page; the only base a shipped run ever uses. */
+  val github: ReleaseUrls = ReleaseUrls(Url("https://github.com/ryanoasis/nerd-fonts/releases"))
+
+  /** A trailing slash on the base is tolerated so an operator-supplied override cannot double it. */
+  def apply(base: Url): ReleaseUrls = new ReleaseUrls(Url(base.value.stripSuffix("/")))
 
 /**
  * Go's `url.PathEscape`: percent-encodes everything in a path segment except RFC 3986 unreserved characters

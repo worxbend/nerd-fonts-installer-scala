@@ -18,9 +18,9 @@ object InstallPlan:
    * duplicates, but two workers on the same name would collide on `<root>/<Family>`, its staging directory
    * and its `.old` backup, so the plan is the last guard before the fan-out.
    */
-  def of(request: InstallRequest): InstallPlan = InstallPlan(
+  def of(request: InstallRequest, urls: ReleaseUrls = ReleaseUrls.github): InstallPlan = InstallPlan(
     request.families.distinct.map: family =>
-      PlannedFamily(family, ReleaseUrls.download(request.selector, family), request.root / family.value),
+      PlannedFamily(family, urls.download(request.selector, family), request.root / family.value),
   )
 
 /** One family's share of the plan: where its archive comes from and where its fonts end up. */

@@ -31,12 +31,13 @@ final class FontInstallerSuite extends munit.FunSuite:
   private val workspace = FunFixture[os.Path](_ => os.temp.dir(prefix = "font-installer"), os.remove.all(_))
 
   private val hack        = family("Hack")
-  private val manifestUrl = ReleaseUrls.checksums(ReleaseSelector.Latest)
+  private val manifestUrl = ReleaseUrls.github.checksums(ReleaseSelector.Latest)
   private val noManifest  = Response.status(404)
 
   private def family(name: String): FamilyName = FamilyName.parse(name).getOrElse(fail(s"unsafe $name"))
 
-  private def downloadUrl(name: String): Url = ReleaseUrls.download(ReleaseSelector.Latest, family(name)).url
+  private def downloadUrl(name: String): Url =
+    ReleaseUrls.github.download(ReleaseSelector.Latest, family(name)).url
 
   private def request(
       root: os.Path,
@@ -86,7 +87,8 @@ final class FontInstallerSuite extends munit.FunSuite:
     assertEquals(
       sink.events,
       Vector(
-        InstallEvent.WouldInstall(hack, ReleaseUrls.download(ReleaseSelector.Latest, hack), root / "Hack"),
+        InstallEvent
+          .WouldInstall(hack, ReleaseUrls.github.download(ReleaseSelector.Latest, hack), root / "Hack"),
         InstallEvent.WouldRefreshCache(root),
       ),
     )
@@ -115,7 +117,7 @@ final class FontInstallerSuite extends munit.FunSuite:
       sink.events,
       Vector(
         InstallEvent.ChecksumManifestUnavailable("404 Not Found"),
-        InstallEvent.Started(hack, ReleaseUrls.download(ReleaseSelector.Latest, hack)),
+        InstallEvent.Started(hack, ReleaseUrls.github.download(ReleaseSelector.Latest, hack)),
         InstallEvent.Installed(hack, root / "Hack"),
       ),
     )
@@ -146,8 +148,9 @@ final class FontInstallerSuite extends munit.FunSuite:
     )
     families.foreach: name =>
       assertEquals(os.read(root / name.value / s"${name.value}.ttf"), "font")
-      val started   =
-        sink.events.indexOf(InstallEvent.Started(name, ReleaseUrls.download(ReleaseSelector.Latest, name)))
+      val started   = sink.events.indexOf(
+        InstallEvent.Started(name, ReleaseUrls.github.download(ReleaseSelector.Latest, name)),
+      )
       val installed = sink.events.indexOf(InstallEvent.Installed(name, root / name.value))
       assert(started >= 0 && installed > started, s"$name: started=$started installed=$installed")
     assertEquals(sink.events.size, 1 + 2 * names.size)
@@ -171,7 +174,7 @@ final class FontInstallerSuite extends munit.FunSuite:
         InstallError.Family(
           inter,
           FamilyInstallError.Download(
-            ReleaseUrls.download(ReleaseSelector.Latest, inter),
+            ReleaseUrls.github.download(ReleaseSelector.Latest, inter),
             HttpError.Status(404),
           ),
         ),

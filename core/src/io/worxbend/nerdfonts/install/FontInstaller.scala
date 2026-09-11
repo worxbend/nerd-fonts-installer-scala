@@ -51,10 +51,11 @@ final class FontInstaller(
     limits: SizeLimits = SizeLimits.default,
     familyDeadline: FiniteDuration = FontInstaller.defaultFamilyDeadline,
     manifestTimeout: FiniteDuration = FontInstaller.defaultManifestTimeout,
+    urls: ReleaseUrls = ReleaseUrls.github,
 ):
 
   /** The plan a run follows; pure, so a dry run and the real run cannot disagree. */
-  def plan(request: InstallRequest): InstallPlan = InstallPlan.of(request)
+  def plan(request: InstallRequest): InstallPlan = InstallPlan.of(request, urls)
 
   def install(request: InstallRequest, sink: InstallEventSink): Either[InstallError, Unit] =
     val planned = plan(request)
@@ -89,7 +90,7 @@ final class FontInstaller(
   // Verification is best-effort: an unavailable manifest is a warning and every family installs unverified;
   // only a digest that is present and differs is fatal. `Truncate` keeps the first MiB like Go's LimitReader.
   private def fetchDigests(selector: ReleaseSelector, sink: InstallEventSink): Map[FamilyName, Sha256Digest] =
-    val request  = HttpRequest(ReleaseUrls.checksums(selector))
+    val request  = HttpRequest(urls.checksums(selector))
     val timedOut = HttpError.Transport(s"timed out after $manifestTimeout")
     timeoutEither(manifestTimeout, timedOut)(
       http.getString(request, limits.manifest, Overflow.Truncate),

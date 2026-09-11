@@ -13,7 +13,7 @@ import java.io.StringWriter
 final class ConsoleEventRendererSuite extends munit.FunSuite:
   private val esc    = "\u001b"
   private val hack   = family("Hack")
-  private val url    = ReleaseUrls.download(ReleaseSelector.Latest, hack)
+  private val url    = ReleaseUrls.github.download(ReleaseSelector.Latest, hack)
   private val root   = os.Path("/fonts")
   private val target = root / "Hack"
 

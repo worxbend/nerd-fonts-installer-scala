@@ -14,7 +14,7 @@ import scala.concurrent.duration.DurationInt
 /** The message table of SPEC §6.3, one row per test. */
 final class InstallErrorSuite extends munit.FunSuite:
   private val hack    = FamilyName.parse("Hack").getOrElse(fail("unsafe"))
-  private val url     = ReleaseUrls.download(ReleaseSelector.Latest, hack)
+  private val url     = ReleaseUrls.github.download(ReleaseSelector.Latest, hack)
   private val root    = os.Path("/fonts")
   private val zip     = os.Path("/tmp/nerd-font-123.zip")
   private val staging = root / ".Hack-456"

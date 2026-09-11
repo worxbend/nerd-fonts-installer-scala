@@ -12,6 +12,7 @@ import io.worxbend.nerdfonts.environment.PathExpander
 import io.worxbend.nerdfonts.fonts.DestinationPath
 import io.worxbend.nerdfonts.fonts.InstallConfig
 import io.worxbend.nerdfonts.http.JdkHttpClient
+import io.worxbend.nerdfonts.http.Url
 import io.worxbend.nerdfonts.install.FcCacheRefresher
 import io.worxbend.nerdfonts.install.FontInstaller
 import io.worxbend.nerdfonts.install.InstallError
@@ -26,6 +27,7 @@ import io.worxbend.nerdfonts.process.JdkProcessRunner
 import io.worxbend.nerdfonts.releases.GitHubReleaseCatalogue
 import io.worxbend.nerdfonts.releases.Release
 import io.worxbend.nerdfonts.releases.ReleaseError
+import io.worxbend.nerdfonts.releases.ReleaseUrls
 
 /**
  * The seams between `Application` and the world, as plain functions (the Go `dependencies` struct).
@@ -51,6 +53,13 @@ final case class AppDependencies(
 
 object AppDependencies:
   /**
+   * Test hook, deliberately undocumented for users: when set, every release asset URL (family zips and the
+   * checksum manifest) is built below this base instead of the GitHub release page, so the CI interrupt
+   * smoke test can point the shipped binary at a local stub. Read here and nowhere else.
+   */
+  val baseUrlVariable: String = "NERD_FONTS_INSTALLER_BASE_URL"
+
+  /**
    * The composition root: the one place the JDK adapters are built and handed to the engine, the catalogue and
    * the picker. `tempDir` is where `nerd-font-*.zip` downloads are staged. The `SttyTerminal` is created inside
    * `runPicker` so its stdin wrapper only exists when a picker session actually starts.
@@ -59,7 +68,7 @@ object AppDependencies:
     val http      = JdkHttpClient()
     val processes = JdkProcessRunner(env)
     val catalogue = GitHubReleaseCatalogue(http)
-    val installer = FontInstaller(http, tempDir, FcCacheRefresher(processes))
+    val installer = FontInstaller(http, tempDir, FcCacheRefresher(processes), urls = releaseUrls(env))
     AppDependencies(
       environment = env,
       colours = OutputStyle.detect(env, TerminalProbe.isTerminal()),
@@ -73,3 +82,9 @@ object AppDependencies:
       isTerminal = () => TerminalProbe.isTerminal(),
       expandDestination = PathExpander.expand(_, env),
     )
+
+  private def releaseUrls(env: Environment): ReleaseUrls = env
+    .variable(baseUrlVariable)
+    .map(_.trim)
+    .filter(_.nonEmpty)
+    .fold(ReleaseUrls.github)(base => ReleaseUrls(Url(base)))
