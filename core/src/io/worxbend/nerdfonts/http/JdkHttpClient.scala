@@ -67,8 +67,11 @@ object JdkHttpClient:
       .build(),
   )
 
+  // `private[http]`, not `private`, so `JdkHttpClientSuite` can test the cause-chain walk directly: whether an
+  // interrupted `client.send` throws a bare `InterruptedException` or an `IOException` wrapping one is a
+  // JDK-internal timing detail that a test cannot reliably force over a real connection.
   @tailrec
-  private def wrapsInterrupt(error: Throwable): Boolean = Option(error.getCause) match
+  private[http] def wrapsInterrupt(error: Throwable): Boolean = Option(error.getCause) match
     case None                          => false
     case Some(_: InterruptedException) => true
     case Some(cause)                   => wrapsInterrupt(cause)

@@ -1,5 +1,6 @@
 package io.worxbend.nerdfonts.http
 
+import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.util.concurrent.atomic.AtomicReference
@@ -77,3 +78,16 @@ final class JdkHttpClientSuite extends munit.FunSuite:
   test("a malformed URL is a Transport error rather than an exception"):
     val result = JdkHttpClient().getString(HttpRequest(Url("not a url")), limit)
     assert(result.left.exists(_.isInstanceOf[HttpError.Transport]), result.toString)
+
+  // Invariant 5: `transportFailure` re-asserts the interrupt flag when `client.send` reports an interrupt as
+  // an `IOException` wrapping it, so an enclosing Ox scope still observes the cancellation. Driving this over
+  // a real loopback connection is not reliable (whether an interrupted `send` throws a bare
+  // `InterruptedException` or an `IOException` wrapping one is a JDK-internal timing detail, not something a
+  // test can force), so the cause-chain walk `wrapsInterrupt` itself is tested directly instead.
+  test("wrapsInterrupt finds an InterruptedException anywhere in the cause chain"):
+    assert(JdkHttpClient.wrapsInterrupt(IOException("reset", InterruptedException())))
+    assert(JdkHttpClient.wrapsInterrupt(IOException("reset", IOException("nested", InterruptedException()))))
+
+  test("wrapsInterrupt is false when nothing in the chain is an InterruptedException"):
+    assert(!JdkHttpClient.wrapsInterrupt(IOException("reset")))
+    assert(!JdkHttpClient.wrapsInterrupt(IOException("reset", RuntimeException("boom"))))
