@@ -430,3 +430,7 @@ one concern per function; scaladoc on public types explains why, not what.
   contains a hyphen (the only shape a pre-release suffix can take under the version regex already enforced in
   "Resolve version") and `--latest` otherwise, applied on both `gh release create` and `gh release edit` so a
   re-run cannot leave a release's flags stale.
+- **`release.yml`'s `changes` job gates the native-image matrix and the publish job on the diff, for branch
+  pushes only.** A push to `main` that touches only `docs/**`, `*.md` or similar has nothing to ship, but the
+  `latest` pre-release moves and force-pushes its tag on every push regardless; tag pushes and
+  `workflow_dispatch` always report `relevant=true` so a real release is never skipped by the path check.
