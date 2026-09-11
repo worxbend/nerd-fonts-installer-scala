@@ -25,19 +25,23 @@ trait Environment:
 object Environment:
   /**
    * The real environment of the running process; the only place in the codebase that reads `sys.env` or
-   * `sys.props`. `$HOME` is consulted first to match Go's `os.UserHomeDir`; `user.home` is the JVM fallback
-   * for a process started without `$HOME`.
+   * `sys.props`. `homeDirectory` reads only `$HOME`, exactly as Go's `os.UserHomeDir` does on Unix: no
+   * fallback to the JVM's passwd-derived `user.home`, so a process started with `$HOME` unset or blank has no
+   * home here either, and `PathExpander`'s `PathError.NoHome` (`$HOME is not defined`) can fire in production
+   * instead of being masked by a home the reference would never have found.
    */
   object System extends Environment:
     def variable(name: String): Option[String] = sys.env.get(name)
 
-    def homeDirectory: Option[os.Path] =
-      variable("HOME").filter(_.nonEmpty).orElse(sys.props.get("user.home")).flatMap(absolutePath)
+    def homeDirectory: Option[os.Path] = homeFrom(variable("HOME"))
 
     def workingDirectory: Either[EnvironmentError, os.Path] =
       Try(os.pwd).toEither.left.map(error => EnvironmentError.NoWorkingDirectory(Diagnostics.describe(error)))
 
-    private def absolutePath(raw: String): Option[os.Path] = Try(os.Path(raw)).toOption
+  // A pure projection of the `$HOME` rule, kept apart from `sys.env` so a test can drive both cases (set,
+  // blank or unset) without mutating global process state.
+  private[environment] def homeFrom(home: Option[String]): Option[os.Path] =
+    home.filter(_.nonEmpty).flatMap(raw => Try(os.Path(raw)).toOption)
 
   /** A fixed environment, for tests and for any caller that needs expansion to be reproducible. */
   def fixed(

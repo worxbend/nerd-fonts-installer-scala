@@ -21,5 +21,14 @@ final class EnvironmentSuite extends munit.FunSuite:
   test("the system environment reads real variables"):
     assertEquals(Environment.System.variable("PATH"), sys.env.get("PATH"))
 
+  test("$HOME unset means no home, with no fallback to the JVM's user.home"):
+    assertEquals(Environment.homeFrom(None), None)
+
+  test("a blank $HOME means no home, exactly like Go's os.UserHomeDir"):
+    assertEquals(Environment.homeFrom(Some("")), None)
+
+  test("a non-blank $HOME resolves to that path"):
+    assertEquals(Environment.homeFrom(Some("/home/nerd")), Some(os.Path("/home/nerd")))
+
   test("an environment error renders its cause"):
     assertEquals(EnvironmentError.NoWorkingDirectory("boom").render, "boom")
