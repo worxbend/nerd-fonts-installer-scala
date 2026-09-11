@@ -70,6 +70,20 @@ jobs:
           fi
           echo "value=${version}" >> "${GITHUB_OUTPUT}"
 
+      - name: Verify BuildInfo version matches the release tag
+        if: steps.version.outputs.value != 'latest'
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          set -euo pipefail
+          expected="${VERSION#v}"
+          actual="$(sed -n 's/^[[:space:]]*val project[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' build.mill | head -n1)"
+          if [[ "${actual}" != "${expected}" ]]; then
+            echo "build.mill Versions.project (\"${actual}\") does not match release tag ${VERSION}; update Versions.project before tagging." >&2
+            exit 1
+          fi
+
       - name: Cache Mill, Coursier and the toolchain
         uses: actions/cache@v4
         with:

@@ -419,3 +419,8 @@ one concern per function; scaladoc on public types explains why, not what.
   from, not the tag named in the form — so a re-publish of an old tag was silently building and `--clobber`-ing
   it with whatever `main` HEAD happened to be. Both the `build` and `publish` jobs pin `ref` to
   `inputs.version` on that event.
+- **`release.yml` fails a tagged build whose `Versions.project` disagrees with the tag.** The binary version is
+  a `build.mill` constant, not derived from the tag (a `Task.Input` sourced from the workflow would make local
+  builds print `dev`/blank outside CI); a `sed` check of `val project = "…"` against the resolved tag, run once
+  per matrix leg before the expensive steps, catches a forgotten version bump instead of shipping a binary whose
+  `--version` disagrees with the release it ships in.
