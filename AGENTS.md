@@ -22,7 +22,7 @@ Applies to Claude Code, Codex, and any other agent working in this repository.
   | Format check | `./mill --no-daemon mill.scalalib.scalafmt/checkFormatAll` |
   | Scalafix | `./mill --no-daemon __.fix` (check with `--check`) |
   | Native binary | `./mill --no-daemon show app.nativeImage` |
-  | Run from source | `./mill --no-daemon app.run -- --help` |
+  | Run from source | `./mill --no-daemon app.run --help` (no `--`: the wrapper drops everything after it, and a bare `app.run` installs from your discovered config) |
 
   The toolchain is GraalVM Community for JDK 25, fetched by Mill; no `GRAALVM_HOME` needed.
 - **Definition of done for any change:** compiles with `-Werror`, all tests pass, formatted, scalafix clean,

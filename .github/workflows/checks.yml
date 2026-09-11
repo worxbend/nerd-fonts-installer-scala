@@ -53,11 +53,12 @@ jobs:
       - name: Run tests
         run: ./mill --no-daemon __.test
 
+      # Arguments go straight after `app.run`: this Mill wrapper drops everything after a `--` separator.
       - name: Smoke test CLI from source
         run: |
-          ./mill --no-daemon app.run -- --version
-          ./mill --no-daemon app.run -- --help
-          ./mill --no-daemon app.run -- --config config.example.yaml --dry-run
+          ./mill --no-daemon app.run --version
+          ./mill --no-daemon app.run --help
+          ./mill --no-daemon app.run --config config.example.yaml --dry-run
 
   native-smoke:
     name: Native image smoke (linux-amd64)
