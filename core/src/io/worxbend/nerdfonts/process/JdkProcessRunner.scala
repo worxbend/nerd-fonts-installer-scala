@@ -30,9 +30,10 @@ final class JdkProcessRunner(env: Environment) extends ProcessRunner:
   // never performs its own PATH search and cannot disagree with `lookPath` about which binary runs.
   def run(spec: ProcessSpec): Either[ProcessError, ProcessResult] =
     if spec.command.isEmpty then Left(ProcessError.Failed("", "empty command"))
-    else lookPath(spec.program) match
-      case None           => Left(ProcessError.NotFound(spec.program))
-      case Some(resolved) => start(spec, resolved).map(await(_, spec.stdout))
+    else
+      lookPath(spec.program) match
+        case None           => Left(ProcessError.NotFound(spec.program))
+        case Some(resolved) => start(spec, resolved).map(await(_, spec.stdout))
 
   def lookPath(name: String): Option[os.Path] =
     if name.contains('/') then Some(name).flatMap(resolveDirect).filter(isExecutableFile)
@@ -83,22 +84,20 @@ final class JdkProcessRunner(env: Environment) extends ProcessRunner:
   // the interrupt that triggered this propagates. A bare `destroy()` returns immediately, so the caller (and
   // the process it exits to) could otherwise observe "interrupted" while the child is still alive, sharing
   // the terminal or racing a caller that inspects the destination right after `run` returns.
-  private def destroyAndReap(process: Process): Unit =
-    if process.isAlive then
-      process.destroyForcibly()
-      uninterruptible(process.waitFor(JdkProcessRunner.destroyReapSeconds, TimeUnit.SECONDS)).discard
+  private def destroyAndReap(process: Process): Unit = if process.isAlive then
+    process.destroyForcibly()
+    uninterruptible(process.waitFor(JdkProcessRunner.destroyReapSeconds, TimeUnit.SECONDS)).discard
 
   // Go (since 1.19, `exec.ErrDot`) refuses to run a binary that a `PATH` search resolved relative to the
   // current directory; an empty entry is exactly that case (`.` to a shell), and so is a bare relative entry
   // (`sub/dir`). Only absolute entries are searched, so a leading/trailing `:` or a `.` on `PATH` can never
   // make this resolve `fc-cache` or `stty` to a binary the user did not put there.
-  private def searchPath: Vector[os.Path] =
-    env
-      .variable("PATH")
-      .toVector
-      .flatMap(_.split(java.io.File.pathSeparatorChar).toVector)
-      .filter(_.startsWith("/"))
-      .flatMap(entry => Try(os.Path(entry)).toOption)
+  private def searchPath: Vector[os.Path] = env
+    .variable("PATH")
+    .toVector
+    .flatMap(_.split(java.io.File.pathSeparatorChar).toVector)
+    .filter(_.startsWith("/"))
+    .flatMap(entry => Try(os.Path(entry)).toOption)
 
   // A name containing a slash is used directly, exactly as Go's `exec.LookPath` does: no `PATH` search, so
   // `ErrDot` does not apply, and a relative name resolves against the working directory because the caller

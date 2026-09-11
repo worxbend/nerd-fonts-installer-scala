@@ -17,6 +17,9 @@ import io.worxbend.nerdfonts.releases.Sha256Digest
 import java.io.IOException
 import java.io.InputStream
 import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.OpenOption
+import java.nio.file.StandardOpenOption
 import java.security.DigestInputStream
 import java.security.MessageDigest
 
@@ -199,10 +202,18 @@ final class FontInstaller(
 
   // Hashed while copied so the archive is read once and never held in memory. The body itself is owned and
   // closed by the port; only the file is closed here, and its close error counts as a copy failure.
+  // `NOFOLLOW_LINKS`: `createTempZip` created this exact path moments ago, but a shared, non-sticky
+  // `$TMPDIR` still leaves a window for another local user to swap in a symlink before this open; refusing
+  // to follow it turns a symlink clobber into a loud failure instead of overwriting whatever it points to.
   private def copyHashing(body: InputStream, zip: os.Path): Either[String, Sha256Digest] =
-    val digest = MessageDigest.getInstance("SHA-256")
+    val digest  = MessageDigest.getInstance("SHA-256")
+    val options = Array[OpenOption](
+      StandardOpenOption.WRITE,
+      StandardOpenOption.TRUNCATE_EXISTING,
+      LinkOption.NOFOLLOW_LINKS,
+    )
     Using
-      .resource(Files.newOutputStream(zip.toNIO))(out =>
+      .resource(Files.newOutputStream(zip.toNIO, options*))(out =>
         DigestInputStream(body, digest).transferTo(out).discard,
       )
       .catching[IOException]

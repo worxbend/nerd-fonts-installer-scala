@@ -21,7 +21,7 @@ import java.nio.file.NotDirectoryException
 private[nerdfonts] object Diagnostics:
   def describe(error: Throwable): String = error match
     case fileSystemError: FileSystemException => fileSystemReason(fileSystemError)
-    case other                                 => message(other)
+    case other                                => message(other)
 
   private def fileSystemReason(error: FileSystemException): String =
     Option(error.getReason).map(_.trim).filter(_.nonEmpty).getOrElse(fileSystemFallback(error))

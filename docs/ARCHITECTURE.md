@@ -433,6 +433,10 @@ one concern per function; scaladoc on public types explains why, not what.
   contains a hyphen (the only shape a pre-release suffix can take under the version regex already enforced in
   "Resolve version") and `--latest` otherwise, applied on both `gh release create` and `gh release edit` so a
   re-run cannot leave a release's flags stale.
+- **The temp zip's write and extraction re-opens use `NOFOLLOW_LINKS`.** `createTempZip` creates the file and
+  drops the handle; `copyHashing` and `ArchiveExtractor.open` both re-open it by path afterwards. In a shared,
+  non-sticky `$TMPDIR` that is a create→reopen symlink-clobber window and a verify→extract TOCTOU window; both
+  re-opens refuse to follow a symlink instead of silently writing through or extracting past a swapped file.
 - **`JdkProcessRunner.lookPath` never resolves a relative or empty `PATH` entry.** Go's `exec.LookPath` has
   refused such a match since 1.19 (`exec.ErrDot`) because a leading/trailing `:` or a `.` on `PATH` would
   otherwise let a binary in the working directory shadow the real `fc-cache` or `stty`. `builder` passes the

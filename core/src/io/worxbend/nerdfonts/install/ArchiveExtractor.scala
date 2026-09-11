@@ -7,6 +7,8 @@ import io.worxbend.nerdfonts.http.Overflow
 
 import java.io.FileOutputStream
 import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 
@@ -36,8 +38,11 @@ object ArchiveExtractor:
     open(zip).flatMap: entries =>
       Using.resource(entries)(stream => extractAll(Session(zip, into, limits, stream), Progress.start))
 
+  // `NOFOLLOW_LINKS`: the temp zip was already digest-verified by path before this re-open, so a symlink
+  // swapped into that name in the meantime (a shared, non-sticky `$TMPDIR`) must fail loudly rather than be
+  // followed into extracting an unverified file.
   private def open(zip: os.Path): Either[ArchiveError, ZipInputStream] = ZipInputStream(
-    os.read.inputStream(zip),
+    Files.newInputStream(zip.toNIO, LinkOption.NOFOLLOW_LINKS),
   )
     .catching[IOException]
     .left

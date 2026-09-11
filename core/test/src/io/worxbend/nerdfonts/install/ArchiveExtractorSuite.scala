@@ -40,6 +40,16 @@ final class ArchiveExtractorSuite extends munit.FunSuite:
     assertEquals(result, Left(ArchiveError.NoFontFiles(zip)))
     assertEquals(result.left.map(_.render), Left(s"extract $zip: no font files found"))
 
+  tempDir.test("a symlink in place of the archive is refused rather than followed"): dir =>
+    val target = FontZips.write(dir, "real.zip", FontZips.family("Hack"))
+    val link   = dir / "font.zip"
+    os.symlink(link, target)
+    val out    = dir / "out"
+    os.makeDir(out)
+    val result = ArchiveExtractor.extract(link, out, SizeLimits.default)
+    assert(result.left.exists(_.isInstanceOf[ArchiveError.Open]), result.toString)
+    assertEquals(os.list(out), Seq.empty)
+
   tempDir.test("a missing archive is an Open error"): dir =>
     val missing = dir / "absent.zip"
     val result  = ArchiveExtractor.extract(missing, dir, SizeLimits.default)

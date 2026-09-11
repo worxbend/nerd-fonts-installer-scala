@@ -79,17 +79,18 @@ final class JdkProcessRunnerSuite extends munit.FunSuite:
     assertEquals(ProcessError.NotFound("fc-cache").render, "fc-cache: executable file not found in PATH")
     assertEquals(ProcessError.Failed("fc-cache", "permission denied").render, "fc-cache: permission denied")
 
-  tempDir.test("a relative or empty PATH entry is never searched, so a cwd binary cannot shadow the real one"):
-    dir =>
-      val impostor = dir / "fc-cache"
-      os.write(impostor, "#!/bin/sh\necho pwned\n")
-      os.perms.set(impostor, Set(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_EXECUTE).asJava)
-      val env = Environment.fixed(variables = Map("PATH" -> ":/nonexistent"), workingDirectory = Right(dir))
-      assertEquals(JdkProcessRunner(env).lookPath("fc-cache"), None)
-      assertEquals(
-        JdkProcessRunner(env).run(ProcessSpec(Vector("fc-cache"))),
-        Left(ProcessError.NotFound("fc-cache")),
-      )
+  tempDir.test(
+    "a relative or empty PATH entry is never searched, so a cwd binary cannot shadow the real one",
+  ): dir =>
+    val impostor = dir / "fc-cache"
+    os.write(impostor, "#!/bin/sh\necho pwned\n")
+    os.perms.set(impostor, Set(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_EXECUTE).asJava)
+    val env      = Environment.fixed(variables = Map("PATH" -> ":/nonexistent"), workingDirectory = Right(dir))
+    assertEquals(JdkProcessRunner(env).lookPath("fc-cache"), None)
+    assertEquals(
+      JdkProcessRunner(env).run(ProcessSpec(Vector("fc-cache"))),
+      Left(ProcessError.NotFound("fc-cache")),
+    )
 
   test(
     "interrupting a captured read of a long-running child's stdout pipe returns promptly and destroys it",

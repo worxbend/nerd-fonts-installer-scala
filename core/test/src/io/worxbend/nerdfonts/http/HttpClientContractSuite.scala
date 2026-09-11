@@ -82,7 +82,7 @@ final class HttpClientContractSuite extends munit.FunSuite:
   test("getString reports a mid-body IOException as Transport instead of letting it escape"):
     val failingAfterAFewBytes = InMemoryHttpClient.Body.Streamed: () =>
       new InputStream:
-        private var served = 0
+        private var served       = 0
         override def read(): Int =
           if served < 3 then
             served += 1
@@ -92,6 +92,7 @@ final class HttpClientContractSuite extends munit.FunSuite:
       client(Response.Served(200, Map.empty, failingAfterAFewBytes)).getString(HttpRequest(url), limit)
     assertEquals(result, Left(HttpError.Transport("Connection reset")))
 
-  private def closable(closed: AtomicBoolean): InMemoryHttpClient.Body = InMemoryHttpClient.Body.Streamed: () =>
-    new java.io.ByteArrayInputStream("payload".getBytes):
-      override def close(): Unit = closed.set(true)
+  private def closable(closed: AtomicBoolean): InMemoryHttpClient.Body = InMemoryHttpClient.Body.Streamed:
+    () =>
+      new java.io.ByteArrayInputStream("payload".getBytes):
+        override def close(): Unit = closed.set(true)

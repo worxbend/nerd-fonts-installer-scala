@@ -250,18 +250,20 @@ final class FontInstallerSuite extends munit.FunSuite:
     val sink         = RecordingSink()
     val resetPartway = Body.Streamed: () =>
       new InputStream:
-        private var served = 0
+        private var served       = 0
         override def read(): Int =
           if served < 2 then
             served += 1
             'a'.toInt
           else throw IOException("Connection reset")
-    val http         =
-      InMemoryHttpClient(
-        Map(manifestUrl -> Response.Served(200, Map.empty, resetPartway), downloadUrl("Hack") -> Response.ok(
+    val http         = InMemoryHttpClient(
+      Map(
+        manifestUrl         -> Response.Served(200, Map.empty, resetPartway),
+        downloadUrl("Hack") -> Response.ok(
           FontZips.family("Hack"),
-        )),
-      )
+        ),
+      ),
+    )
     assertEquals(installer(ws, http).install(request(root, Vector(hack)), sink), Right(()))
     assertEquals(
       sink.events.headOption,
