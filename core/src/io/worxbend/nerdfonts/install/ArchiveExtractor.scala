@@ -1,6 +1,7 @@
 package io.worxbend.nerdfonts.install
 
 import io.worxbend.nerdfonts.Diagnostics
+import io.worxbend.nerdfonts.TerminalSafe
 import io.worxbend.nerdfonts.http.BoundedInputStream
 import io.worxbend.nerdfonts.http.ByteLimit
 import io.worxbend.nerdfonts.http.Overflow
@@ -190,14 +191,17 @@ enum ArchiveError:
   case ArchiveTooLarge(zip: os.Path, limit: ByteLimit)
   case Entry(entry: String, cause: ArchiveEntryError)
 
+  // `entry` is a raw name from inside an untrusted, checksum-unverified-until-later zip; every case that
+  // embeds one goes through `TerminalSafe` so a hostile entry name cannot inject a terminal escape into the
+  // rendered error line.
   def render: String = this match
     case Open(zip, cause)                           => s"open font zip $zip: $cause"
     case NoFontFiles(zip)                           => s"extract $zip: no font files found"
     case EntryTooLarge(zip, entry, declared, limit) =>
-      s"extract $zip: font file $entry declares $declared bytes, exceeds ${limit.render} byte limit"
+      s"extract $zip: font file ${TerminalSafe.sanitize(entry)} declares $declared bytes, exceeds ${limit.render} byte limit"
     case ArchiveTooLarge(zip, limit)                =>
       s"extract $zip: total uncompressed size exceeds ${limit.render} byte limit"
-    case Entry(entry, cause)                        => s"extract $entry: ${cause.render}"
+    case Entry(entry, cause)                        => s"extract ${TerminalSafe.sanitize(entry)}: ${cause.render}"
 
 /** Why one font entry could not be written, in the order the steps happen. */
 enum ArchiveEntryError:
@@ -209,9 +213,10 @@ enum ArchiveEntryError:
   case Finalize(target: os.Path, cause: String)
 
   def render: String = this match
-    case InvalidName(entry, cause)  => s"invalid font file name $entry: $cause"
+    case InvalidName(entry, cause)  => s"invalid font file name ${TerminalSafe.sanitize(entry)}: $cause"
     case Create(target, cause)      => s"create font file $target: $cause"
-    case Copy(entry, target, cause) => s"copy font file $entry to $target: $cause"
-    case Oversize(entry, limit)     => s"font file $entry exceeds ${limit.render} byte limit"
+    case Copy(entry, target, cause) => s"copy font file ${TerminalSafe.sanitize(entry)} to $target: $cause"
+    case Oversize(entry, limit)     =>
+      s"font file ${TerminalSafe.sanitize(entry)} exceeds ${limit.render} byte limit"
     case Flush(target, cause)       => s"flush font file $target: $cause"
     case Finalize(target, cause)    => s"finalize font file $target: $cause"

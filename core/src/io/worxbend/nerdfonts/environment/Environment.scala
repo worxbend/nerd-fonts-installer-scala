@@ -16,6 +16,9 @@ trait Environment:
   /** The value of an environment variable, or `None` when it is not set. */
   def variable(name: String): Option[String]
 
+  /** The value of a JVM system property, or `None` when it is not set (e.g. the `java.io.tmpdir` fallback). */
+  def property(name: String): Option[String]
+
   /** The current user's home directory, or `None` when the process cannot determine one (Go: `os.UserHomeDir` error). */
   def homeDirectory: Option[os.Path]
 
@@ -33,6 +36,8 @@ object Environment:
   object System extends Environment:
     def variable(name: String): Option[String] = sys.env.get(name)
 
+    def property(name: String): Option[String] = sys.props.get(name)
+
     def homeDirectory: Option[os.Path] = homeFrom(variable("HOME"))
 
     def workingDirectory: Either[EnvironmentError, os.Path] =
@@ -48,11 +53,13 @@ object Environment:
       variables: Map[String, String] = Map.empty,
       homeDirectory: Option[os.Path] = Some(os.Path("/home/test")),
       workingDirectory: Either[EnvironmentError, os.Path] = Right(os.Path("/workspace")),
+      properties: Map[String, String] = Map.empty,
   ): Environment =
     val home    = homeDirectory
     val working = workingDirectory
     new Environment:
       def variable(name: String): Option[String]              = variables.get(name)
+      def property(name: String): Option[String]              = properties.get(name)
       def homeDirectory: Option[os.Path]                      = home
       def workingDirectory: Either[EnvironmentError, os.Path] = working
 

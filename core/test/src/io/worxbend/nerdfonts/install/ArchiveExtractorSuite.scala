@@ -78,6 +78,16 @@ final class ArchiveExtractorSuite extends munit.FunSuite:
     )
     assertEquals(result.left.map(_.render), Left("extract Big.ttf: font file Big.ttf exceeds 8 byte limit"))
 
+  tempDir.test("an entry name carrying a raw escape sequence is neutralised in the rendered error"): dir =>
+    val hostile          = "Big[2J.ttf"
+    val limits           = SizeLimits(fontFile = ByteLimit.bytes(8))
+    val (zip, _, result) =
+      extract(dir, FontZips.stored(hostile -> "this font is larger than the cap"), limits)
+    assertEquals(result, Left(ArchiveError.EntryTooLarge(zip, hostile, 32L, ByteLimit.bytes(8))))
+    val rendered         = result.left.map(_.render).left.getOrElse(fail("expected a Left"))
+    assert(!rendered.contains(""), rendered)
+    assert(rendered.contains("Big?[2J.ttf"), rendered)
+
   tempDir.test("an entry of exactly the cap is accepted"): dir =>
     val limits         = SizeLimits(fontFile = ByteLimit.bytes(4))
     val (_, _, result) = extract(dir, FontZips.deflated("Ok.ttf" -> "font"), limits)
