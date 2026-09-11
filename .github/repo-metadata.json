@@ -1,0 +1,18 @@
+{
+  "description": "Scala 3 / GraalVM native-image rebuild of the Go Nerd Fonts installer: install fonts from a YAML config or a terminal picker, no JVM required.",
+  "homepage": "",
+  "topics": [
+    "nerd-fonts",
+    "scala3",
+    "scala",
+    "graalvm",
+    "native-image",
+    "cli",
+    "picocli",
+    "ox",
+    "mill",
+    "fonts",
+    "terminal-ui",
+    "dotfiles"
+  ]
+}
