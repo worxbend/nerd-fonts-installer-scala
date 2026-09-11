@@ -267,10 +267,15 @@ no entry; the shipped binary's `--help` and `--version` are the runtime proof th
     for every embedded entry name, and in `PickerModel.familyItems`/`releaseItem` for the row `title`/`description`
     text (never for `value`, which stays the exact stem the release published, for correct selection and
     `FamilyName.parse` later).
-23. **`AppFailure.render` is the only place operation prefixes are added.** Every nested error ADT renders its
-    detail only; `load config <path>: `, `load discovered config <path>: ` and `install fonts: ` are spelled once,
-    in `cli`, so the same `ConfigError` reads differently depending on how the file was chosen and no message is
-    prefixed twice.
+23. **`AppFailure.render` is the only place the top-level `load config`/`load discovered config`/`install fonts`
+    wording is added — the ADTs it wraps may already carry a prefix of their own.** `load config <path>: `,
+    `load discovered config <path>: ` and `install fonts: ` are spelled once, in `cli`, so the same `ConfigError`
+    reads differently depending on how the file was chosen. `Release`/`Picker` add no prefix at all: `cause.render`
+    is used verbatim. But `ReleaseError`, `PathError` and `ConfigError` are themselves already user-facing,
+    Go-style wrappers one level down and do embed an operation prefix for the step *they* represent —
+    `list Nerd Fonts releases: `, `locate current directory: `, `open <path>: `/`read <path>: `/`parse <path>: ` —
+    so a rendered line can carry two prefixes chained together (e.g. `load config <path>: open <path>: no such
+    file or directory`), not just `AppFailure`'s own.
 24. **Exit codes come from `ExitCode.of` or from picocli, nowhere else.** `Application` returns values; no step
     chooses a number. The union of the two sources is the exit-code table above.
 25. **`Application` never sees the argument array.** picocli types stop at `Cli`; everything below receives

@@ -517,7 +517,14 @@ joined with `\r\n` (each followed by `ESC[K`), then `ESC[J`, as one flushed writ
 `ESC[?1049l`. Never write a bare `\n` while in raw mode (a test asserts no `\n` without a preceding `\r`).
 
 **Input.** Exactly one `abandonOnInterruptReads(System.in)` per process (`StdinSource`); `SttyTerminal` never
-wraps `System.in` again. Reads run inside the picker's `supervised` scope so cancellation cannot deadlock.
+wraps `System.in` again. Neither `PickerSession` nor `KeyDecoder` opens a `supervised` scope of its own —
+`PickerSession.drive` is a plain tail-recursive loop. `abandonOnInterruptReads` and `timeoutOption` (the
+post-`ESC` byte race) are each self-contained Ox calls that manage their own short-lived internal fork per
+invocation, reading on a detached thread and racing it against interruption of the calling thread rather than
+requiring one. That is what makes cancellation safe without a scope here: `app.Main` turns SIGINT into
+`mainThread.interrupt()`, which unblocks a pending `read()` promptly instead of deadlocking on it (the
+underlying blocked OS read is abandoned, not force-cancelled), and `SttyTerminal.withRawMode`'s `finally`
+still restores the saved terminal settings when the resulting `InterruptedException` unwinds through it.
 `KeyDecoder`: `0x03` = Ctrl-C, `0x0a` = Ctrl-J, `0x0b` = Ctrl-K, `0x0d` = Enter, `0x09` = Tab, `0x7f`/`0x08` =
 Backspace, `0x20` = Space, `0x1b` starts an escape sequence, other bytes decode as UTF-8 `Char`. After `0x1b` the
 next byte is read with `timeoutOption(escapeTimeout)` (default 50 ms; constructor parameter); timeout → `Escape`.
