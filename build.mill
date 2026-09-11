@@ -129,6 +129,11 @@ object app extends NerdFontsModule, NativeImageModule:
   def nativeImageOptions = Seq(
     "--no-fallback",
     "-O2",
+    // GraalVM 25's AMD64 default is `x86-64-v3` (AVX2/BMI2), which aborts at startup on a pre-2013 CPU or a
+    // default-model VM/container; `compatibility` is native-image's baseline-features setting on every
+    // architecture (already AArch64's default, so arm64 builds are unaffected) and matches the Go reference's
+    // `GOAMD64=v1`.
+    "-march=compatibility",
     "--initialize-at-build-time=scala",
     "-H:+ReportExceptionStackTraces",
     // `sun.misc.Unsafe` reads its memory-access policy once, from the VM's saved startup properties, into a

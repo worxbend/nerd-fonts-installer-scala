@@ -403,3 +403,9 @@ one concern per function; scaladoc on public types explains why, not what.
 - **Every picocli option carries an explicit `order`.** picocli lists setter-bound options in reflection order,
   which the JVM does not define; the first native build listed `--font-names` before `--config`. The order is
   Go's (`flag` sorts alphabetically) with `--help` last, because Go does not list it at all.
+- **`nativeImageOptions` pins `-march=compatibility`.** GraalVM 25's AMD64 default is `x86-64-v3`
+  (AVX2/BMI2/…), so an unpinned build refuses to start on a pre-2013 CPU or a default-model VM/container —
+  before `main` runs, so even `--version` fails. `compatibility` is native-image's baseline-features setting on
+  every architecture (it is already AArch64's default, so the arm64 targets are unaffected) and matches the Go
+  reference's `GOAMD64=v1`. A CPU-specific `-march` would need a second matrix leg per amd64 target to ship both
+  a fast and a compatible binary; one baseline build is the smaller surface.
