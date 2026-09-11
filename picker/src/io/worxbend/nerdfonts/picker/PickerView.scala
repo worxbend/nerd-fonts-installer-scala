@@ -7,7 +7,7 @@ import io.worxbend.nerdfonts.environment.ColourMode
  * help footer. Pure, so the size matrix test can assert the height budget without a terminal. Colour is
  * decided solely by the `ColourMode` argument; the model never knows whether it is being drawn in colour.
  */
-object PickerView:
+private[picker] object PickerView:
   def render(model: PickerModel, colours: ColourMode): Frame = model.step match
     case PickerStep.ChooseRelease           => Frame(Screen(model, colours).release)
     case current: PickerStep.ChooseFamilies => Frame(Screen(model, colours).families(current))

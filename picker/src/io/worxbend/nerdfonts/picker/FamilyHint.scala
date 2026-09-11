@@ -1,7 +1,7 @@
 package io.worxbend.nerdfonts.picker
 
 /** The one-line blurb under each family, copied from Go `familyHint`: lower-case the name, first match wins. */
-object FamilyHint:
+private[picker] object FamilyHint:
   def of(family: String): String =
     val key = family.toLowerCase
     if key.contains("mono") then "monospace favorite"

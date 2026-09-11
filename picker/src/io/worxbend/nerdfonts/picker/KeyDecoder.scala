@@ -22,7 +22,7 @@ import ox.timeoutOption
  * (function keys, modified arrows, mouse reports) are consumed and dropped so their bytes never leak into
  * the filter as text.
  */
-final class KeyDecoder(input: InputStream, escapeTimeout: FiniteDuration):
+final private[picker] class KeyDecoder(input: InputStream, escapeTimeout: FiniteDuration):
   import KeyDecoder.*
 
   /** The next key; `None` when the input is exhausted. */
@@ -106,7 +106,7 @@ final class KeyDecoder(input: InputStream, escapeTimeout: FiniteDuration):
     case -1    => Read.EndOfInput
     case value => Read.Byte(value)
 
-object KeyDecoder:
+private[picker] object KeyDecoder:
   private val utf8 = StandardCharsets.UTF_8
 
   private def utf8Length(lead: Int): Option[Int] =

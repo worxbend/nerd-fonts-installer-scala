@@ -5,7 +5,7 @@ package io.worxbend.nerdfonts.picker
  * Unicode escapes so the private-use Nerd Font code points survive editors and diff tools that cannot show
  * them. Adding a font means adding a row to [[IconSet.nerdFamilyGlyphs]], not a branch.
  */
-final case class IconSet(
+final private[picker] case class IconSet(
     mode: IconMode,
     title: String,
     pkg: String,
@@ -29,7 +29,7 @@ final case class IconSet(
     case IconMode.Ascii => "[NF]"
     case _              => "\u2726 NF \u2726"
 
-object IconSet:
+private[picker] object IconSet:
   /** Normalised family key (lower-case, no spaces) to Nerd Font glyph; used only by the `nerd` set. */
   val nerdFamilyGlyphs: Map[String, String] = Map(
     "0xproto"         -> "\ue656",

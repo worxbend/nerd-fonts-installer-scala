@@ -11,5 +11,5 @@ import ox.abandonOnInterruptReads
  * lets `KeyDecoder`'s escape timeout and an external SIGINT unblock a pending read. Two such wrappers would
  * compete for the same bytes, so there is exactly one, created on first use and never closed.
  */
-object StdinSource:
+private[picker] object StdinSource:
   lazy val stream: InputStream = abandonOnInterruptReads(System.in)

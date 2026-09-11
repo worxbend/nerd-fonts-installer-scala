@@ -9,7 +9,7 @@ import io.worxbend.nerdfonts.releases.Release
  * the release it was built from and a finished selection cannot be edited. `Cancelled` is a terminal step
  * rather than a flag so that `update` has nothing to check before every key.
  */
-enum PickerStep:
+private[picker] enum PickerStep:
   case ChooseRelease
   case ChooseFamilies(release: Release, families: ListState, selected: Set[String])
   case Done(release: Release, selected: Set[String])
@@ -31,7 +31,7 @@ enum PickerStep:
  * first, then the step's own keys, then the list. That is what makes `q` un-typeable and `Esc` never clear
  * the filter.
  */
-final case class PickerModel(
+final private[picker] case class PickerModel private (
     releases: Vector[Release],
     releaseList: ListState,
     step: PickerStep,
@@ -126,8 +126,14 @@ final case class PickerModel(
         value = family,
       )
 
-object PickerModel:
-  /** The model at the release step; `releases` must be non-empty, which `PickerSession` guarantees. */
+private[picker] object PickerModel:
+  /**
+   * The model at the release step; `releases` must be non-empty, which `PickerSession` guarantees. The
+   * primary constructor is private (and so, per Scala's rule for private-constructor case classes, is the
+   * synthesized `copy`) so `initial` is the only way to reach an invalid, empty-`releases` model — a defect
+   * this `require` still turns into a fast failure at the boundary rather than a later `NoSuchElementException`
+   * from `currentRelease`.
+   */
   def initial(
       releases: Vector[Release],
       destination: DestinationPath,

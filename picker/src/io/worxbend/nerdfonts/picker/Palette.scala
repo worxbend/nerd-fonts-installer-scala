@@ -3,7 +3,7 @@ package io.worxbend.nerdfonts.picker
 import io.worxbend.nerdfonts.environment.ColourMode
 
 /** A true-colour RGB value; `towards` reproduces Go `lerpHex` rounding so gradients match the reference. */
-final case class Colour(red: Int, green: Int, blue: Int):
+final private[picker] case class Colour(red: Int, green: Int, blue: Int):
   def hex: String = f"#$red%02X$green%02X$blue%02X"
 
   def foreground: fansi.Attr = fansi.Color.True(red, green, blue)
@@ -14,7 +14,7 @@ final case class Colour(red: Int, green: Int, blue: Int):
     def lerp(x: Int, y: Int): Int = x + ((y - x).toDouble * t + 0.5).toInt
     Colour(lerp(red, other.red), lerp(green, other.green), lerp(blue, other.blue))
 
-object Colour:
+private[picker] object Colour:
   /** `#RRGGBB`; anything else is white, as Go `hexRGB` degrades. */
   def hex(value: String): Colour =
     val digits = value.stripPrefix("#")
@@ -28,7 +28,7 @@ object Colour:
  * bare text in `Plain` mode, so a single decision made by the CLI switches the whole picker to monochrome
  * without any renderer checking a flag of its own.
  */
-object Palette:
+private[picker] object Palette:
   val pink: Colour    = Colour.hex("#FF5FAF")
   val magenta: Colour = Colour.hex("#C75CFF")
   val violet: Colour  = Colour.hex("#8A7CFF")
