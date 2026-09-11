@@ -74,22 +74,27 @@ The Go Bubble Tea program rebuilt as three separable layers. The **model** is an
 pure `update`; the **view** is a pure function from model and `ColourMode` to a `Frame`; the **terminal** is a
 port with one production adapter. Only `PickerSession` touches all three, and it holds no state of its own.
 
+Only `Terminal`, `SttyTerminal`, `PickerSession`, `PickerOutcome`, `PickerError`, `IconMode` and
+`ReleaseLoadingSpinner` are referenced from `cli`/`app`; everything else below is `private[picker]` so that
+boundary is enforced by the compiler rather than by convention (`Frame`, `Viewport`, `RawTerminal` and
+`TerminalStreams` stay public only because the public `Terminal`/`SttyTerminal` signatures mention them).
+
 | Type | Role |
 | --- | --- |
-| `PickerModel.initial(releases, destination, refreshFontCache, iconMode, viewport)` / `update(key)` / `resized(viewport)` / `outcome` | The state machine. `PickerStep` is `ChooseRelease`, `ChooseFamilies(release, families: ListState, selected)`, `Done(release, selected)` or `Cancelled`; each step carries exactly its own state, so a family list cannot exist without the release it came from. The release list lives on the model so going back returns to the same cursor and filter |
+| `PickerModel.initial(releases, destination, refreshFontCache, iconMode, viewport)` / `update(key)` / `resized(viewport)` / `outcome` (`private[picker]`, private constructor) | The state machine. `PickerStep` (`private[picker]`) is `ChooseRelease`, `ChooseFamilies(release, families: ListState, selected)`, `Done(release, selected)` or `Cancelled`; each step carries exactly its own state, so a family list cannot exist without the release it came from. The release list lives on the model so going back returns to the same cursor and filter. The constructor is private (Scala privates the synthesized `copy` to match), so `initial`'s `require(releases.nonEmpty)` is the only way to reach a model — `copy(releases = Vector.empty)` no longer compiles from outside the class |
 | `PickerKey` | The decoded key vocabulary (`Up … CtrlK`, `Char(c)`); the model never sees bytes |
-| `ListState` (+ `ListItem`, `FilterState`, `FilteredItem`) | bubbles' `list.Model` reduced to pure operations: move/page/first/last, `openFilter`/`typeChar`/`eraseChar`/`applyFilter`, `withItems`, and a scrolling window (`windowStart`/`visibleItems`/`scrolled(pageSize)`) that follows the cursor with the smallest move. `handle(key, pageSize)` is the list's half of the precedence table |
+| `ListState` (+ `ListItem`, `FilterState`, `FilteredItem`, all `private[picker]`) | bubbles' `list.Model` reduced to pure operations: move/page/first/last, `openFilter`/`typeChar`/`eraseChar`/`applyFilter`, `withItems`, and a scrolling window (`windowStart`/`visibleItems`/`scrolled(pageSize)`) that follows the cursor with the smallest move. `handle(key, pageSize)` is the list's half of the precedence table; while browsing it also binds `Left`/`PgUp` and `Right`/`PgDn` to paging (bubbles' default keymap), and `b` where it is not already claimed as a families-step key |
 | `FuzzyMatcher` (`private[picker]`) | Case-insensitive subsequence match over `title + " " + description + " " + value`, ranked by first position then span, stable for ties; positions are kept so the view can underline them |
 | `PickerOutcome.of(release, selected, destination, refreshFontCache)` | `Cancelled` when nothing is selected, else every stem through `FamilyName.parse` (sorted, first failure wins) → `Selected(InstallConfig)` or `Rejected(ConfigValidationError.InvalidFamily)` |
-| `PickerView.render(model, colours): Frame` | The Go `View()`: banner box, list panel, side panel (wide layouts, only when it fits), help footer, and the done screen. `Layout` (`private[picker]`) owns the budget constants; `ListView` renders a `ListState` into exactly `listHeight` rows; `Box` draws a rounded, padded box of an exact size; `TextWidth` is the cell arithmetic (`displayWidth`, ANSI-aware `truncate`, `fit`, `wrap`) |
-| `Palette` (+ `Colour`, `Styles`) | The neon palette, `brandRamp`, `gradientText`/`gradientRule`/`spread`/`statLine`/`progressBar`/`percentage`; every helper takes the `ColourMode` and returns bare text in `Plain` |
-| `IconMode` (+ `parse`, `IconModeError`), `IconSet` (+ `forMode`, `iconForFamily`, `logo`), `FamilyHint.of` | The Go icon tables verbatim (as `\u` escapes so the private-use glyphs survive tooling); `auto` resolves to the Unicode set |
+| `PickerView.render(model, colours): Frame` (`private[picker]`) | The Go `View()`: banner box, list panel, side panel (wide layouts, only when it fits), help footer, and the done screen. `Layout` (`private[picker]`) owns the budget constants; `ListView` renders a `ListState` into exactly `listHeight` rows; `Box` draws a rounded, padded box of an exact size; `TextWidth` is the cell arithmetic (`displayWidth`, ANSI-aware `truncate`, `fit`, `wrap`) |
+| `Palette` (+ `Colour`, `Styles`, all `private[picker]`) | The neon palette, `brandRamp`, `gradientText`/`gradientRule`/`spread`/`statLine`/`progressBar`/`percentage`; every helper takes the `ColourMode` and returns bare text in `Plain` |
+| `IconMode` (+ `parse`, `IconModeError`), `IconSet` (`private[picker]`; + `forMode`, `iconForFamily`, `logo`), `FamilyHint.of` (`private[picker]`) | The Go icon tables verbatim (as `\u` escapes so the private-use glyphs survive tooling); `auto` resolves to the Unicode set |
 | `Terminal.withRawMode(body: RawTerminal => A): Either[TerminalError, A]`, `RawTerminal` (`size()`, `readKey()`, `write(frame)`) | The loan-shaped port; raw mode, alternate screen and hidden cursor exist only inside the loan |
-| `SttyTerminal(processRunner, escapeTimeout = 50 ms, streams = TerminalStreams.process)` | The adapter: `stty -g` / `stty raw -echo` / `stty <saved>` through `ProcessRunner` with `Stdin.FromFile(/dev/tty)` and `Stdout.Capture`, never a shell; `stty size` per frame with an 80×24 fallback; frames as `ESC[H` + lines joined by `\r\n` (each followed by `ESC[K`) + `ESC[J`, one flushed write |
-| `KeyDecoder(input, escapeTimeout)` | Bytes → `PickerKey` per the §7 table; the byte after `ESC` is read under `timeoutOption`; unknown CSI/SS3 sequences and supplementary code points are consumed and dropped |
-| `StdinSource.stream` | The one `abandonOnInterruptReads(System.in)` in the process |
+| `SttyTerminal(processRunner, escapeTimeout = 50 ms, streams = TerminalStreams.process)` | The adapter: `stty -g` / `stty raw -echo` / `stty <saved>` through `ProcessRunner` with `Stdin.FromFile(/dev/tty)` and `Stdout.Capture`, never a shell; the restore runs in a `finally` around the raw-mode entry itself, so it fires even if `stty raw -echo` throws (not just if the session body does) and never fires if `stty -g` itself failed; the alternate screen and cursor sequences are emitted only from the success branch; `stty size` per frame with an 80×24 fallback; frames as `ESC[H` + lines joined by `\r\n` (each followed by `ESC[K`) + `ESC[J`, one flushed write |
+| `KeyDecoder(input, escapeTimeout)` (`private[picker]`) | Bytes → `PickerKey` per the §7 table; the byte after `ESC` is read under `timeoutOption`; unknown CSI/SS3 sequences and supplementary code points are consumed and dropped |
+| `StdinSource.stream` (`private[picker]`) | The one `abandonOnInterruptReads(System.in)` in the process |
 | `PickerSession.run(releases, icons, colours, terminal): Either[PickerError, PickerOutcome]` | render → read → update as a tail-recursive loop; `PickerError.NoReleases` before the terminal is touched, `PickerError.Terminal` when raw mode fails; end of input is a cancellation |
-| `ReleaseLoadingSpinner.around(stderr, colours)(load)` | The stderr spinner block: a daemon ticker fork inside a `supervised` scope whose body is `load()`, so the ticker is cancelled and joined before the final line; the line is redrawn with `\r` and space padding, never `ESC[K` |
+| `ReleaseLoadingSpinner.around(stderr, colours)(load)` | The stderr spinner block: a daemon ticker fork inside a `supervised` scope whose body is `load()`, so the ticker is cancelled and joined before the final line; the line is redrawn with `\r` and space padding, never `ESC[K`; an `InterruptedException` unwinding `supervised` is caught just long enough to end the line with `  interrupted` before being rethrown, so a SIGINT during the load never leaves the cursor mid-spin. Frames are bubbles' `MiniDot` cycle `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏` |
 
 Test-side helper, public and reusable from `cli` tests: `picker.ScriptedTerminal(keys, viewport, rawMode)` feeds
 a key script, records every `Frame` and counts raw-mode entries and exits.
@@ -100,11 +105,12 @@ a key script, records every `Frame` and counts raw-mode entries and exits.
    never clears a filter and `q` cannot be typed into one.
 2. Step keys: release — `Enter` chooses the highlighted (filtered) release; families — `Enter` finishes (no-op with
    nothing selected), `Space` toggles, `a` selects all / clears all, `b` goes back. None can be typed into the family
-   filter; on the release step `Space`, `a` and `b` are ordinary characters.
-3. The list: while browsing `Up`/`k`, `Down`/`j`, `PgUp`/`PgDn`, `Home`/`g`, `End`/`G`, `/` (opens the input with the
-   applied text, cursor reset); while editing, printable characters and `Backspace` re-filter live, `Up`/`Down`/
-   `Tab`/`Shift-Tab`/`Ctrl-K`/`Ctrl-J` apply (an empty or match-less pattern clears instead), paging keys are dead,
-   `Enter` never applies.
+   filter; on the release step `Space` and `a` are ordinary characters, and `b` is a list key (3.) rather than a
+   step key, mirroring bubbles forwarding every key it does not itself consume into the active `list.Model`.
+3. The list: while browsing `Up`/`k`, `Down`/`j`, `PgUp`/`Left`, `PgDn`/`Right` (also `b` on the release step, per
+   bubbles' default keymap), `Home`/`g`, `End`/`G`, `/` (opens the input with the applied text, cursor reset); while
+   editing, printable characters and `Backspace` re-filter live, `Up`/`Down`/`Tab`/`Shift-Tab`/`Ctrl-K`/`Ctrl-J`
+   apply (an empty or match-less pattern clears instead), paging keys are dead, `Enter` never applies.
 
 **Height budget invariant.** `Layout.listHeight = max(9, safeHeight − chrome)` with `chrome = 16` (full banner) or
 `14` (compact, `safeHeight < 26`), floors 48×24, `bodyWidth ≤ 132`, side panel 34 wide from 104 columns. The banner
@@ -243,7 +249,10 @@ no entry; the shipped binary's `--help` and `--version` are the runtime proof th
     data until then; an unsafe stem is `Rejected`, never a path.
 19. **The picker model is pure and the terminal is a loan.** `PickerModel.update` is a total function of model and
     key; `Terminal.withRawMode` restores `stty` settings, the alternate screen and the cursor in a `finally`, so an
-    interrupt unwinding through a read leaves the terminal usable. Nothing in `picker` reads `System.in` except
+    interrupt unwinding through a read leaves the terminal usable. The restore is wrapped around raw-mode entry
+    itself, not just the session body, so an interrupt landing inside `stty raw -echo`'s `Process.waitFor()` —
+    after the child has already applied the termios change — still restores the saved settings; it never fires if
+    `stty -g` itself failed, since nothing was changed. Nothing in `picker` reads `System.in` except
     `StdinSource`, once.
 20. **Frames fit.** `PickerView.render` never yields more than `safeHeight` rows or a line wider than `safeWidth`;
     any new banner row or panel must be paid for in `Layout`'s chrome constants.

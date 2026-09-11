@@ -461,8 +461,9 @@ The spinner block mirrors Go's `tui.LoadReleases` on stderr:
 ```
 
 (leading blank line, two-space indents; the brand line is gradient-coloured in `Ansi` mode; the spinner cycles
-`⠋⠙⠚⠞⠖⠦⠴⠲⠳⠓` by rewriting the second line with `\r`). On success the second line ends as
-`  ✓ Releases loaded`; on failure it ends with the error message.
+bubbles' `MiniDot` frames `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏` by rewriting the second line with `\r`). On success the second line ends
+as `  ✓ Releases loaded`; on failure it ends with the error message; an interrupt during the load ends it with
+`  interrupted` before the `InterruptedException` propagates, so the line is never left mid-spin.
 
 Model (pure, fully unit-tested without a terminal):
 
@@ -476,9 +477,10 @@ Model (pure, fully unit-tested without a terminal):
      families step — `Enter` finishes (no-op when nothing is selected, even mid-filter), `Space` toggles the
      highlighted family, `a` selects all / clears all, `b` goes back. None of these can be typed into the family
      filter.
-  3. Everything else goes to the list. Browsing: `Up`/`k`, `Down`/`j`; `PgUp`/`PgDn` page; `Home`/`g` first;
-     `End`/`G` last; `/` focuses the filter input (cursor reset to first item). Filtering: printable characters
-     and Backspace edit the filter and re-filter live; `Up`/`Down`/`Tab`/`Shift-Tab`/`Ctrl-K`/`Ctrl-J` apply the
+  3. Everything else goes to the list. Browsing: `Up`/`k`, `Down`/`j`; `PgUp`/`Left` and `PgDn`/`Right` page
+     (also `b` on the release step, where it is not already claimed as a step key); `Home`/`g` first; `End`/`G`
+     last; `/` focuses the filter input (cursor reset to first item). Filtering: printable characters and
+     Backspace edit the filter and re-filter live; `Up`/`Down`/`Tab`/`Shift-Tab`/`Ctrl-K`/`Ctrl-J` apply the
      filter when the input is non-empty (if it filters to nothing the filter is cleared instead); paging keys are
      disabled while the input is focused. `Enter` never applies the filter. An applied filter persists until it is
      re-opened with `/` and emptied. (Deviation: Go's `h/l/f/d/u` paging aliases are not bound.)
@@ -502,9 +504,12 @@ Model (pure, fully unit-tested without a terminal):
 `SttyTerminal` issues every `stty` call through `ProcessRunner` as
 `ProcessSpec(Vector("stty", …), stdin = Stdin.FromFile(os.Path("/dev/tty")), stdout = Stdout.Capture)` — no shell.
 `stty -g` saves the settings string (opaque; Linux and macOS formats differ; only ever passed back to
-`stty <saved>`), `stty raw -echo` enters raw mode, and the saved string is restored in a `finally` (also on
-cancellation). Size comes from `stty size` (`rows cols`) on every frame; fallback 80×24 on any `Left`, non-zero
-exit or parse failure.
+`stty <saved>`), `stty raw -echo` enters raw mode, and the saved string is restored in a `finally` that wraps
+the raw-mode entry itself, not just the session body — so `stty <saved>` still runs even if `stty raw -echo`
+throws (an `InterruptedException` can surface from `Process.waitFor()` after the child has already applied the
+termios change) rather than returning a normal `Left`. The alternate screen and cursor sequences are emitted
+only once raw mode is confirmed entered. Size comes from `stty size` (`rows cols`) on every frame; fallback
+80×24 on any `Left`, non-zero exit or parse failure.
 
 **Output.** `stty raw` clears `opost`/`onlcr`, so the terminal no longer turns `\n` into CR+LF. `write(frame)`
 emits `ESC[?1049h` once on entry (alternate screen) and `ESC[?25l` (hide cursor); each frame is `ESC[H`, the lines
