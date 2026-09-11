@@ -370,3 +370,9 @@ one concern per function; scaladoc on public types explains why, not what.
 - **`ReleaseLoadingSpinner` is invoked by `Application`, not by `PickerSession`.** Go's `tui.LoadReleases` runs
   before the Bubble Tea program starts and the picker itself never performs network IO; keeping the spinner in the
   cli flow means a listing failure surfaces as `AppFailure.Release` with the same exit code as on `--font-names`.
+- **The image builder runs with `-Dsun.misc.unsafe.memory.access=allow`.** JDK 25 warns on stderr the first time
+  each class calls a deprecated `sun.misc.Unsafe` memory-access method, and `scala.runtime.LazyVals$` does on every
+  start. The policy is a `static final` of `sun.misc.Unsafe`, read from the VM's saved startup properties when the
+  class initialises — inside the builder, for a native image — so the flag belongs on the builder JVM
+  (`-J-D…` in `nativeImageOptions`), not on the binary. A four-line banner on every `--version` would break the
+  "error lines are the bare rendered message" contract and every script that checks stderr is empty.

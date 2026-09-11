@@ -131,6 +131,11 @@ object app extends NerdFontsModule, NativeImageModule:
     "-O2",
     "--initialize-at-build-time=scala",
     "-H:+ReportExceptionStackTraces",
+    // `sun.misc.Unsafe` reads its memory-access policy once, from the VM's saved startup properties, into a
+    // `static final`; the class initialises inside the image builder, so the binary carries the builder JVM's
+    // value. Without this the shipped binary prints JDK 25's four-line `WARNING: sun.misc.Unsafe` banner
+    // (triggered by `scala.runtime.LazyVals$`) to stderr on every run.
+    "-J-Dsun.misc.unsafe.memory.access=allow",
   )
 
   def writeAssembly(dest: String = "dist/nerd-fonts-installer.jar") = Task.Command:
