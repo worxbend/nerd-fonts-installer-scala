@@ -30,7 +30,7 @@ object DownloadUrl:
  * The base is a value rather than a constant so the composition root can point a whole run at a local stub
  * (the CI interrupt smoke test); every production path uses [[ReleaseUrls.github]].
  */
-final class ReleaseUrls(base: Url):
+final class ReleaseUrls private (base: Url):
   def download(selector: ReleaseSelector, family: FamilyName): DownloadUrl =
     DownloadUrl(asset(selector, s"${PathEscape.escape(family.value)}.zip"))
 
