@@ -1,0 +1,178 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag to publish, for example v0.1.0 (must already exist)"
+        required: true
+        type: string
+
+# Least privilege: each job declares its own permissions.
+permissions: {}
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # native-image cannot cross-compile, so every target gets its own runner. Intel macOS needs the
+        # explicit label: macos-latest is arm64 and macos-13 was retired.
+        include:
+          - target: linux-amd64
+            runner: ubuntu-24.04
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
+          - target: macos-amd64
+            runner: macos-15-intel
+          - target: macos-arm64
+            runner: macos-15
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            version="${INPUT_VERSION}"
+          elif [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            version="${GITHUB_REF_NAME}"
+          else
+            version="latest"
+          fi
+          if [[ "${version}" != "latest" && ! "${version}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid release version: ${version}" >&2
+            exit 1
+          fi
+          echo "value=${version}" >> "${GITHUB_OUTPUT}"
+
+      - name: Cache Mill, Coursier and the toolchain
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/coursier
+            ~/Library/Caches/Coursier
+            ~/.cache/mill
+            ~/.mill
+          key: ${{ runner.os }}-${{ runner.arch }}-mill-${{ hashFiles('build.mill', 'mill', '.mill-version') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-mill-
+
+      - name: Compile and test
+        run: |
+          ./mill --no-daemon __.compile
+          ./mill --no-daemon __.test
+
+      - name: Build native image
+        id: native
+        shell: bash
+        run: |
+          set -euo pipefail
+          export NERD_FONTS_INSTALLER_BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          ref="$(./mill --no-daemon show app.nativeImage | sed -n 's/^"\(.*\)"$/\1/p' | tail -n 1)"
+          path="${ref##*:}"
+          test -x "${path}"
+          echo "path=${path}" >> "${GITHUB_OUTPUT}"
+
+      - name: Package
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+          TARGET: ${{ matrix.target }}
+          BIN: ${{ steps.native.outputs.path }}
+        run: |
+          set -euo pipefail
+          name="nerd-fonts-installer_${VERSION}_${TARGET}"
+          mkdir -p "dist/${name}"
+          cp "${BIN}" "dist/${name}/nerd-fonts-installer"
+          chmod +x "dist/${name}/nerd-fonts-installer"
+          cp LICENSE config.example.yaml "dist/${name}/"
+          if [[ -f README.md ]]; then cp README.md "dist/${name}/"; fi
+          "dist/${name}/nerd-fonts-installer" --version
+          "dist/${name}/nerd-fonts-installer" --help > /dev/null
+          tar -C dist -czf "dist/${name}.tar.gz" "${name}"
+          rm -rf "dist/${name}"
+          (cd dist && shasum -a 256 "${name}.tar.gz" > "${name}.tar.gz.sha256")
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nerd-fonts-installer_${{ steps.version.outputs.value }}_${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub release
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Assemble checksums
+        run: |
+          set -euo pipefail
+          cd dist
+          rm -f checksums.txt
+          cat ./*.sha256 > checksums.txt
+          rm -f ./*.sha256
+          cp ../scripts/install.sh install.sh
+          ls -la
+
+      - name: Publish tagged release
+        if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" dist/* --clobber
+          else
+            gh release create "${TAG}" dist/* --verify-tag --generate-notes --latest --title "${TAG}"
+          fi
+
+      - name: Refresh moving latest release
+        if: github.ref_type == 'branch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git tag -f latest "${GITHUB_SHA}"
+          git push --force origin refs/tags/latest
+          notes="Automated build from ${GITHUB_SHA}. Asset names are stable; prefer a tagged release for pinning."
+          if gh release view latest >/dev/null 2>&1; then
+            gh release edit latest --target "${GITHUB_SHA}" --title "Latest build" --notes "${notes}" --prerelease --latest=false
+            gh release upload latest dist/* --clobber
+          else
+            gh release create latest dist/* --target "${GITHUB_SHA}" --title "Latest build" --notes "${notes}" --prerelease --latest=false
+          fi

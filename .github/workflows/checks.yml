@@ -1,0 +1,109 @@
+name: Checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      # Mill fetches its own JVM (GraalVM Community for JDK 25, see build.mill), so no setup-java step:
+      # the cache below keeps that download and the dependency jars between runs.
+      - name: Cache Mill, Coursier and the toolchain
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/coursier
+            ~/Library/Caches/Coursier
+            ~/.cache/mill
+            ~/.mill
+          key: ${{ runner.os }}-${{ runner.arch }}-mill-${{ hashFiles('build.mill', 'mill', '.mill-version') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-mill-
+
+      - name: Check formatting
+        run: ./mill --no-daemon mill.scalalib.scalafmt/checkFormatAll
+
+      - name: Scalafix
+        run: ./mill --no-daemon __.fix --check
+
+      - name: Compile with warnings as errors
+        run: ./mill --no-daemon __.compile
+
+      - name: Run tests
+        run: ./mill --no-daemon __.test
+
+      - name: Smoke test CLI from source
+        run: |
+          ./mill --no-daemon app.run -- --version
+          ./mill --no-daemon app.run -- --help
+          ./mill --no-daemon app.run -- --config config.example.yaml --dry-run
+
+  native-smoke:
+    name: Native image smoke (linux-amd64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Cache Mill, Coursier and the toolchain
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/coursier
+            ~/.cache/mill
+            ~/.mill
+          key: ${{ runner.os }}-${{ runner.arch }}-mill-${{ hashFiles('build.mill', 'mill', '.mill-version') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-mill-
+
+      - name: Build native image
+        id: native
+        run: |
+          set -euo pipefail
+          ref="$(./mill --no-daemon show app.nativeImage | sed -n 's/^"\(.*\)"$/\1/p' | tail -n 1)"
+          path="${ref##*:}"
+          test -x "${path}"
+          echo "path=${path}" >> "${GITHUB_OUTPUT}"
+
+      - name: Smoke test native binary
+        env:
+          BIN: ${{ steps.native.outputs.path }}
+        run: |
+          set -euo pipefail
+          "${BIN}" --version
+          "${BIN}" --help > help.txt
+          grep -q -- '--dry-run' help.txt
+          "${BIN}" --config config.example.yaml --dry-run
+          if "${BIN}" --icons bogus; then echo "expected exit 2"; exit 1; fi
+          scripts/ci/interrupt-smoke.sh "${BIN}"
+
+  actionlint:
+    name: Lint workflows
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: actionlint
+        uses: raven-actions/actionlint@v2
