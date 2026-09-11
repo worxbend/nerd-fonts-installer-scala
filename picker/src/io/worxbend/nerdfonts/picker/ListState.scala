@@ -4,7 +4,7 @@ package io.worxbend.nerdfonts.picker
  * The filter input's state. `Editing` and `Applied` both narrow the list; only `Editing` receives typed
  * characters, and only an applied filter shows in the status bar as `“text”`.
  */
-enum FilterState:
+private[picker] enum FilterState:
   case Inactive
   case Editing(text: String)
   case Applied(text: String)
@@ -16,7 +16,7 @@ enum FilterState:
     case Applied(text) => text
 
 /** An item that survived the filter, with the matched positions the view underlines. */
-final case class FilteredItem(item: ListItem, matched: Vector[Int])
+final private[picker] case class FilteredItem(item: ListItem, matched: Vector[Int])
 
 /**
  * An immutable, filterable, scrollable list: the bubbles `list.Model` reduced to what the picker uses.
@@ -26,7 +26,7 @@ final case class FilteredItem(item: ListItem, matched: Vector[Int])
  * window offset follows the cursor with the smallest move that keeps it on screen, so browsing with `j`/`k`
  * scrolls one row at a time rather than flipping pages.
  */
-final case class ListState(
+final private[picker] case class ListState(
     items: Vector[ListItem],
     cursor: Int = 0,
     filter: FilterState = FilterState.Inactive,
@@ -90,15 +90,18 @@ final case class ListState(
   /** Remember where the window settled so the next movement scrolls from there. */
   def scrolled(pageSize: Int): ListState = copy(offset = windowStart(pageSize))
 
+  // Left/Right and (where nothing higher in the precedence table has already claimed it) `b` mirror bubbles'
+  // default keymap (`PrevPage: left, pgup, b`; `NextPage: right, pgdown`), which the model forwards every
+  // unconsumed key into; on the families step `b` is a step key ("go back") and never reaches here.
   private def handleWhileBrowsing(key: PickerKey, pageSize: Int): ListState = key match
-    case PickerKey.Up | PickerKey.Char('k')   => moveUp
-    case PickerKey.Down | PickerKey.Char('j') => moveDown
-    case PickerKey.PageUp                     => pageUp(pageSize)
-    case PickerKey.PageDown                   => pageDown(pageSize)
-    case PickerKey.Home | PickerKey.Char('g') => first
-    case PickerKey.End | PickerKey.Char('G')  => last
-    case PickerKey.Char('/')                  => openFilter
-    case _                                    => this
+    case PickerKey.Up | PickerKey.Char('k')                      => moveUp
+    case PickerKey.Down | PickerKey.Char('j')                    => moveDown
+    case PickerKey.PageUp | PickerKey.Left | PickerKey.Char('b') => pageUp(pageSize)
+    case PickerKey.PageDown | PickerKey.Right                    => pageDown(pageSize)
+    case PickerKey.Home | PickerKey.Char('g')                    => first
+    case PickerKey.End | PickerKey.Char('G')                     => last
+    case PickerKey.Char('/')                                     => openFilter
+    case _                                                       => this
 
   // Paging keys are deliberately dead while the input is focused, as in bubbles; `Enter` is never an accept
   // key here because the model consumes it first.
@@ -116,5 +119,5 @@ final case class ListState(
 
   private def moveTo(index: Int): ListState = copy(cursor = ListState.clamp(index, visible.size))
 
-object ListState:
+private[picker] object ListState:
   private def clamp(index: Int, size: Int): Int = math.max(0, math.min(index, size - 1))

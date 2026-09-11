@@ -185,6 +185,18 @@ final class PickerModelSuite extends munit.FunSuite:
     val many = Vector(latest.copy(families = (1 to 30).map(i => s"Family$i").toVector))
     assertEquals(familiesStep(press(model(many), Enter, Char('/'), PageDown)).families.cursor, 0)
 
+  test("left and right page like PgUp and PgDn while browsing"):
+    val many = Vector(latest.copy(families = (1 to 30).map(i => s"Family$i").toVector))
+    val page = model(many).layout.itemsPerPage
+    assertEquals(familiesStep(press(model(many), Enter, Right)).families.cursor, page)
+    assertEquals(familiesStep(press(model(many), Enter, Right, Right, Left)).families.cursor, page)
+
+  test("b pages up on the release step, where it is not a step key"):
+    val many = (1 to 30).map(i => latest.copy(name = s"v$i", tag = tag(s"v0.0.$i"))).toVector
+    val page = model(many).layout.itemsPerPage
+    assertEquals(press(model(many), PageDown, Char('b')).releaseList.cursor, 0)
+    assertEquals(press(model(many), PageDown, PageDown, Char('b')).releaseList.cursor, page)
+
   test("browsing letters are typed while the filter input is focused"):
     assertEquals(
       familiesStep(press(atFamilies, Char('/'), Char('j'), Char('k'))).families.filter,
