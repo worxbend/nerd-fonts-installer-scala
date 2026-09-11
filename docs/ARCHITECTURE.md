@@ -194,7 +194,10 @@ no entry; the shipped binary's `--help` and `--version` are the runtime proof th
    own per-family deadline. Never use the throwing `ox.timeout`.
 5. **Interrupts are never swallowed.** `InterruptedException` propagates out of every port. The JDK HTTP
    adapter re-asserts the interrupt flag when the JDK reports an interrupt as an `IOException`, so an Ox scope
-   still observes the cancellation. `JdkProcessRunner` destroys a still-running child before propagating.
+   still observes the cancellation. `JdkProcessRunner` forcibly destroys a still-running child and waits,
+   bounded, for it to be reaped before the interrupt propagates: a captured-stdout read is a classic pipe read
+   that ignores `Thread.interrupt`, so it runs under `abandonOnInterrupt`, whose `onAbandon` destroys the
+   process and EOFs the pipe.
 6. **No shell, ever.** `ProcessSpec.command` is an argv vector handed to `ProcessBuilder`; `Inherit` streams map
    to `Redirect.INHERIT` so `fc-cache` shares the real terminal.
 7. **Nothing below the composition root reads `sys.env` / `sys.props`.** `Environment.System` is the only
@@ -430,6 +433,11 @@ one concern per function; scaladoc on public types explains why, not what.
   contains a hyphen (the only shape a pre-release suffix can take under the version regex already enforced in
   "Resolve version") and `--latest` otherwise, applied on both `gh release create` and `gh release edit` so a
   re-run cannot leave a release's flags stale.
+- **`JdkProcessRunner.lookPath` never resolves a relative or empty `PATH` entry.** Go's `exec.LookPath` has
+  refused such a match since 1.19 (`exec.ErrDot`) because a leading/trailing `:` or a `.` on `PATH` would
+  otherwise let a binary in the working directory shadow the real `fc-cache` or `stty`. `builder` passes the
+  resolved absolute path as `command(0)` so `ProcessBuilder`'s own PATH search — which does not have this
+  guard — never gets a bare name to resolve on its own.
 - **`release.yml`'s `changes` job gates the native-image matrix and the publish job on the diff, for branch
   pushes only.** A push to `main` that touches only `docs/**`, `*.md` or similar has nothing to ship, but the
   `latest` pre-release moves and force-pushes its tag on every push regardless; tag pushes and

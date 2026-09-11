@@ -3,8 +3,13 @@ package io.worxbend.nerdfonts.process
 import io.worxbend.nerdfonts.environment.Environment
 
 import java.nio.file.attribute.PosixFilePermission
+import java.util.concurrent.atomic.AtomicReference
 
+import scala.concurrent.duration.Duration
+import scala.concurrent.duration.DurationInt
+import scala.concurrent.duration.FiniteDuration
 import scala.jdk.CollectionConverters.*
+import scala.jdk.OptionConverters.*
 
 /** Real subprocesses, but only POSIX-standard ones (`echo`, `cat`, `false`, `ls`) and never through a shell. */
 final class JdkProcessRunnerSuite extends munit.FunSuite:
@@ -73,3 +78,58 @@ final class JdkProcessRunnerSuite extends munit.FunSuite:
   test("process errors render the program name"):
     assertEquals(ProcessError.NotFound("fc-cache").render, "fc-cache: executable file not found in PATH")
     assertEquals(ProcessError.Failed("fc-cache", "permission denied").render, "fc-cache: permission denied")
+
+  tempDir.test("a relative or empty PATH entry is never searched, so a cwd binary cannot shadow the real one"):
+    dir =>
+      val impostor = dir / "fc-cache"
+      os.write(impostor, "#!/bin/sh\necho pwned\n")
+      os.perms.set(impostor, Set(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_EXECUTE).asJava)
+      val env = Environment.fixed(variables = Map("PATH" -> ":/nonexistent"), workingDirectory = Right(dir))
+      assertEquals(JdkProcessRunner(env).lookPath("fc-cache"), None)
+      assertEquals(
+        JdkProcessRunner(env).run(ProcessSpec(Vector("fc-cache"))),
+        Left(ProcessError.NotFound("fc-cache")),
+      )
+
+  test(
+    "interrupting a captured read of a long-running child's stdout pipe returns promptly and destroys it",
+  ):
+    // `sleep` never writes to or closes stdout until it exits, so `readAllBytes` blocks in exactly the
+    // non-interruptible pipe read the fix targets, until the process is destroyed and the pipe is EOFed.
+    runInterruptedAndAssertReaped(ProcessSpec(Vector("sleep", "30"), stdout = Stdout.Capture), "sleep")
+
+  test("interrupting a waitFor on a long-running inherited-stream child destroys and reaps it"):
+    runInterruptedAndAssertReaped(ProcessSpec(Vector("sleep", "30")), "sleep")
+
+  private def runInterruptedAndAssertReaped(spec: ProcessSpec, descendantHint: String): Unit =
+    val outcome = AtomicReference[Option[Either[InterruptedException, Either[ProcessError, ProcessResult]]]](
+      None,
+    )
+    val worker  = Thread: () =>
+      val result =
+        try Right(runner.run(spec))
+        catch case interrupted: InterruptedException => Left(interrupted)
+      outcome.set(Some(result))
+    worker.start()
+    awaitCondition(s"$descendantHint to start", 5.seconds)(hasDescendant(descendantHint))
+    worker.interrupt()
+    worker.join(5.seconds.toMillis)
+    assert(!worker.isAlive, "run did not return within five seconds of the interrupt")
+    assert(outcome.get().exists(_.isLeft), s"expected InterruptedException, got ${outcome.get()}")
+    awaitCondition(s"$descendantHint to be reaped", 5.seconds)(!hasDescendant(descendantHint))
+
+  private def hasDescendant(commandHint: String): Boolean = java.lang.ProcessHandle
+    .current()
+    .descendants()
+    .anyMatch(handle =>
+      handle.info().command().toScala.exists(_.contains(commandHint)) ||
+        handle.info().commandLine().toScala.exists(_.contains(commandHint)),
+    )
+
+  @scala.annotation.tailrec
+  private def awaitCondition(what: String, remaining: FiniteDuration)(condition: => Boolean): Unit =
+    if condition then ()
+    else if remaining <= Duration.Zero then fail(s"timed out waiting for $what")
+    else
+      Thread.sleep(10)
+      awaitCondition(what, remaining - 10.millis)(condition)
