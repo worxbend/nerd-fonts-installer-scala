@@ -1,7 +1,7 @@
 # Architecture
 
-Status: covers the foundation half of `core` and the `config` module. Agents building `install`, `picker`,
-`cli` and `app` extend this document in the same change that adds their module. The behavioural contract is
+Status: covers `core` (foundation packages and the install engine) and the `config` module. Agents building
+`picker`, `cli` and `app` extend this document in the same change that adds their module. The behavioural contract is
 [`SPEC.md`](SPEC.md); this file records how the code is shaped and which invariants must never move.
 
 ## Module map
@@ -12,10 +12,10 @@ config -> core
 picker -> core
 ```
 
-`core` contains the domain, the ports and (later) the install engine. It never imports picocli, fansi or
+`core` contains the domain, the ports and the install engine. It never imports picocli, fansi or
 terminal code. Root package `io.worxbend.nerdfonts`; packages are named after concepts.
 
-### `core` packages built so far
+### `core` packages
 
 | Package | Role | Public surface |
 | --- | --- | --- |
@@ -24,10 +24,29 @@ terminal code. Root package `io.worxbend.nerdfonts`; packages are named after co
 | `http` | The one HTTP port and its adapter | `HttpClient` (+ `getString`), `HttpRequest`, `Url`, `ByteLimit`, `Overflow`, `HttpError` (+ `statusLine`), `HttpStatus`, `BoundedInputStream`, `RawResponse` + `ResponseDelivery`, `JdkHttpClient` |
 | `releases` | The Nerd Fonts release catalogue | `Release`, `ReleaseCatalogue`, `GitHubReleaseCatalogue`, `ReleaseError`, `ReleaseSelection`, `ReleaseUrls`, `DownloadUrl`, `Sha256Digest`, `ChecksumManifest` |
 | `process` | Subprocesses as a port | `ProcessRunner`, `ProcessSpec` (+ `Stdin`, `Stdout`, `Stderr`), `ProcessResult`, `ExitStatus`, `ProcessError`, `JdkProcessRunner` |
+| `install` | The install engine | `InstallRequest`, `InstallPlan` (+ `InstallPlan.of`, `PlannedFamily`), `SizeLimits`, `InstallEvent` + `InstallEventSink`, `FontInstaller`, `ArchiveExtractor` (+ `ArchiveError`, `ArchiveEntryError`, `ExtractedCount`), `DirectorySwap` (+ `SwapError`), `FontCacheRefresher` (+ `FontCacheAvailability`, `FontCacheError`) with `FcCacheRefresher`, `InstallError`, `FamilyInstallError` |
 
 Test-side fakes, public and reusable from every module's tests: `http.InMemoryHttpClient` (routes `Url` →
 canned response, records requests, serves bodies through the real `BoundedInputStream`) and
 `process.FakeProcessRunner` (prefix-matched scripts, records calls, fixed `lookPath` table).
+The `install` suites add package-private helpers only (`FontZips` builds zips in memory, `RecordingSink` is a
+deliberately unsynchronised sink, `GatedHttpClient` holds chosen requests behind a latch); other modules drive
+the engine through `InstallEventSink` and the two public fakes.
+
+### The install engine — `io.worxbend.nerdfonts.install`
+
+`FontInstaller(http, tempDir, refresher, limits, familyDeadline, manifestTimeout)` is the only class with
+behaviour; everything else is a value, a port or a pure step.
+
+| Step | Owner | Shape |
+| --- | --- | --- |
+| Plan | `InstallPlan.of(request)` | Pure: de-duplicate families (first occurrence wins), compute `ReleaseUrls.download(selector, family)` and `root / family` per family. `FontInstaller.plan` returns it; `install` executes exactly it |
+| Dry run | `FontInstaller.describe` | `WouldInstall` per planned family, then `WouldRefreshCache(root)`; no port is touched |
+| Root | `FontInstaller.createRoot` | `os.makeDir.all(root)`; failure is `InstallError.Destination` and nothing else runs |
+| Manifest | `FontInstaller.fetchDigests` | `getString(checksums, limits.manifest, Overflow.Truncate)` under `timeoutEither(30 s)`; any failure is the `ChecksumManifestUnavailable` warning and an empty map |
+| Fan-out | `FontInstaller.runFanOut` | One `supervised` scope: `Actor.create(sink)`, `Flow.fromIterable(plan.families).mapParUnordered(min(4, n))(...).runForeach(abortOnFailure)` |
+| Family | `FontInstaller.installFamilyNow` | `Started` → temp zip → download + SHA-256 → digest check → staging dir → `ArchiveExtractor.extract` → `DirectorySwap.replace` → `Installed`; the temp zip and staging dir are removed in `finally`; the whole body sits under `timeoutEither(familyDeadline, TimedOut)` |
+| Font cache | `FontInstaller.refreshCache` | `refresher.availability` decides between the `FontCacheUnavailable` warning and `RefreshingFontCache` → `refresh(root)` → `FontCacheRefreshed`; `FcCacheRefresher` runs `fc-cache -f <root>` with every stream inherited |
 
 
 ### `config` module — `io.worxbend.nerdfonts.config`
@@ -81,6 +100,32 @@ directory.
     returned as the error, never skipped and never a reason to start the picker (Go: `errors.Is(err, os.ErrNotExist)`).
 11. **Strict keys in both formats.** An unknown key, a repeated YAML key or a value of the wrong shape fails the
     load with the field named; nothing is coerced except the documented YAML scalar rules.
+12. **Installs are staged, then renamed.** A family is extracted into `<root>/.<Family>-<random>` and becomes
+    live only through `DirectorySwap.replace`: remove a stale `<target>.old`, rename the existing target to
+    `.old`, rename the staging directory into place. The second rename is the commit point: before it a
+    failure restores the previous fonts, after it a cleanup failure is never reported. An existing
+    `<root>/<Family>` is therefore untouched by a failed download, a checksum mismatch, a bad archive, a
+    deadline or an interrupt.
+13. **Per-family paths are disjoint, which is what makes the fan-out safe.** `<root>/<Family>`, its staging
+    directory and its `.old` belong to one family; `InstallPlan.of` de-duplicates so two workers never share
+    them. At most four families run at once.
+14. **The sink is serialised by the engine, never by the sink.** Workers emit through
+    `Actor.create(sink)` + `ask`, so `InstallEventSink.emit` is invoked from one thread at a time, in
+    submission order, and each worker blocks until its line is written. Events outside the fan-out go to the
+    sink on the calling thread. Implementations must not add locking; the test sink is deliberately
+    unsynchronised so a broken contract shows up as corruption.
+15. **First failure cancels the siblings; finished families stay installed.** A family's `Left` becomes the
+    private `FamilyInstallAborted`, raised on the flow's own thread as the result is received; Ox ends the
+    fan-out, interrupts the in-flight workers (whose `finally` blocks remove their scratch files) and the
+    boundary in `FontInstaller.installAll` catches exactly that type. Nothing else is caught there:
+    `InterruptedException` propagates so SIGINT unwinds every `finally` and exits through the CLI.
+16. **Deadlines are values.** Each family runs under `timeoutEither(familyDeadline, TimedOut)`; the manifest
+    fetch under `timeoutEither(manifestTimeout, …)`. The throwing `ox.timeout` is never used, so a deadline can
+    never masquerade as a defect.
+17. **Extraction trusts nothing in the archive.** Entries are chosen by extension (`.ttf`/`.otf`/`.ttc`,
+    case-insensitive) and flattened to their base name, so a path inside the zip never decides where a byte
+    lands; the declared size is refused before inflating, the stream is capped at `fontFile + 1`, the total
+    at `archive`; every file is fsynced and closed explicitly; zero font files is an error.
 
 ## Conventions that reviewers enforce
 
@@ -127,3 +172,26 @@ one concern per function; scaladoc on public types explains why, not what.
 - **`Environment` is the only input to discovery.** `ConfigLocations` never reads `sys.env`; `$XDG_CONFIG_HOME` counts
   only when absolute (Go `filepath.IsAbs`), a missing home silently drops the config-home half, a missing working
   directory is `ConfigError.NoWorkingDirectory` rendered `locate current directory: <cause>`.
+- **`FamilyInstallAborted` is raised in `runForeach`, not inside the worker.** Ox delivers a worker's exception to
+  the flow wrapped in `ChannelClosedException.Error`; raising it as the flow receives each result keeps the
+  §6.5 shape (one private type, caught with `.catching` at the boundary, siblings interrupted) without a second
+  exception type crossing `supervised`.
+- **`ZipInputStream`, as the spec chose, with its two consequences accepted.** A file that is not a zip has no
+  entries and is reported as `no font files found` rather than Go's `open font zip`; a corrupt header mid-stream
+  is `ArchiveError.Open`. A streamed entry may not declare its size (`-1` when it lives in the data descriptor),
+  so the declared checks are skipped for it and the `fontFile + 1` cap plus the running total after the copy
+  are the guards; `zip`-built Nerd Fonts archives declare sizes, so production still fails fast.
+- **`FamilyInstallError.TempZip` is one case more than the spec lists.** Creating `nerd-font-*.zip` can fail
+  before any URL or path is known; Go reports `create temporary zip file: <cause>` and so does this case,
+  instead of mis-filing the failure under `Copy`.
+- **`FamilyInstallError.render(family)` takes the family.** Only `checksum mismatch for <Family>` needs the name
+  and only the `InstallError.Family` wrapper holds it; passing it beats duplicating it in every case.
+- **`FontCacheRefresher` has two members.** `availability` and `refresh(root)` are separate so the engine can emit
+  `FontCacheUnavailable` versus `RefreshingFontCache` → `FontCacheRefreshed` itself; a single `refresh` returning a
+  tri-state would push event ordering into the adapter. `FontCacheError` is typed (`Launch(ProcessError)` /
+  `Exit(ExitStatus)`) and renders `exit status 1` like Go's `ExitError`.
+- **`ArchiveEntryError.InvalidName`** covers a base name the filesystem cannot represent (a NUL byte in a hostile
+  archive); Go would surface it as an `open` failure, here it is named so the message stays readable.
+- **`Cleanup` is best effort by design.** Removing the temp zip, the staging directory and a committed swap's
+  `.old` swallows non-fatal exceptions only, so an interrupt still propagates while a leftover can never mask
+  the real error or fail a successful install.
