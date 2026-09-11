@@ -79,7 +79,9 @@ object config extends NerdFontsModule:
 object picker extends NerdFontsModule:
   def moduleDeps = Seq(core)
   def mvnDeps    = Seq(Deps.fansi, Deps.ox)
-  object test extends NerdFontsTests
+  // The picker tests script `stty` through core's `FakeProcessRunner`.
+  object test extends NerdFontsTests:
+    def moduleDeps = super.moduleDeps ++ Seq(core.test)
 
 /** Picocli command surface, exit codes and application wiring. */
 object cli extends NerdFontsModule:
