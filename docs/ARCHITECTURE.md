@@ -475,11 +475,18 @@ one concern per function; scaladoc on public types explains why, not what.
   path; the tradeoff accepted here is a documented minimum of glibc ≥ 2.34 (Ubuntu 22.04+, Debian 12+, RHEL/Rocky
   9+) for `linux-amd64`/`linux-arm64`, checked with `ldd`/`objdump -T` against each release build. Revisit if a
   supported-OS report comes in from an older distribution.
-- **`release.yml` checks out `inputs.version` for `workflow_dispatch`.** The default `actions/checkout@v4`
-  behaviour resolves `github.ref`, which for a manually dispatched run is the branch the dispatch was started
-  from, not the tag named in the form — so a re-publish of an old tag was silently building and `--clobber`-ing
-  it with whatever `main` HEAD happened to be. Both the `build` and `publish` jobs pin `ref` to
-  `inputs.version` on that event.
+- **`release.yml` checks out `inputs.version` for `workflow_dispatch`, `github.sha` otherwise — never the bare
+  `github.ref`.** `github.ref` is a moving branch reference that `actions/checkout@v4` re-resolves to that
+  branch's *current* tip at checkout time, not the commit that triggered the run. For `workflow_dispatch` this
+  meant a re-publish of an old tag was silently building whatever `main` HEAD happened to be instead of the
+  tag named in the form. For a plain branch push it is worse and was hit for real on the first push to `main`:
+  the build matrix takes ~10 minutes, and a second push landing in that window moved the branch, so the
+  `publish` job's checkout picked up the newer commit while `$GITHUB_SHA` (used by `git tag -f latest
+  "${GITHUB_SHA}"`) still named the original, now-absent-from-the-shallow-clone one — `git push --force origin
+  refs/tags/latest` failed with "nonexistent object". Every checkout in `build` and `publish` pins `ref` to
+  `inputs.version` on `workflow_dispatch` and to `github.sha` otherwise; only the `changes` job's checkout is
+  unpinned, and only because it diffs `before`/`$GITHUB_SHA` with `fetch-depth: 0`, so which ref it resolves to
+  first does not matter — every commit up to whatever it checks out is present either way.
 - **`release.yml` fails a tagged build whose `Versions.project` disagrees with the tag.** The binary version is
   a `build.mill` constant, not derived from the tag (a `Task.Input` sourced from the workflow would make local
   builds print `dev`/blank outside CI); a `sed` check of `val project = "…"` against the resolved tag, run once
