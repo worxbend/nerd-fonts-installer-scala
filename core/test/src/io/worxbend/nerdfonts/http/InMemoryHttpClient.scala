@@ -1,9 +1,11 @@
 package io.worxbend.nerdfonts.http
 
 import java.io.ByteArrayInputStream
+import java.io.IOException
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
 import ox.discard
@@ -48,6 +50,16 @@ object InMemoryHttpClient:
 
     /** A body whose first read parks until the reading thread is interrupted, for cancellation tests. */
     def blockingUntilInterrupted: Body = Streamed(() => BlockingInputStream())
+
+    /**
+     * A body that serves `okByte` `count` times, then throws an `IOException(message)` on every further read
+     * — a reset mid-stream, after headers were already accepted.
+     */
+    def failingAfter(count: Int, message: String, okByte: Int = 'x'.toInt): Body = Streamed: () =>
+      new InputStream:
+        private val served       = AtomicInteger(0)
+        override def read(): Int =
+          if served.getAndIncrement() < count then okByte else throw IOException(message)
 
   /** What a route answers: a served response or a transport-level failure. */
   enum Response:

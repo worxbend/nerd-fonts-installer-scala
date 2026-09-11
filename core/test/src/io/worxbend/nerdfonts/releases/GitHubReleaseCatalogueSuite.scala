@@ -130,14 +130,7 @@ final class GitHubReleaseCatalogueSuite extends munit.FunSuite:
     assertEquals(result, Left(ReleaseError.Http(HttpError.TooLarge(ByteLimit.bytes(8), None))))
 
   test("a page reset mid-stream is an Http error carrying the reset, not an escaping exception"):
-    val resetPartway = Body.Streamed: () =>
-      new java.io.InputStream:
-        private var served       = 0
-        override def read(): Int =
-          if served < 2 then
-            served += 1
-            '['.toInt
-          else throw java.io.IOException("Connection reset")
+    val resetPartway = Body.failingAfter(2, "Connection reset", okByte = '['.toInt)
     val http         = InMemoryHttpClient(Map(page(1) -> Response.Served(200, Map.empty, resetPartway)))
     assertEquals(
       catalogue(http, maxPages = 1).releases(),

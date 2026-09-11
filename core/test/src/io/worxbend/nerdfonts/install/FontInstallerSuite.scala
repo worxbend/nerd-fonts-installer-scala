@@ -248,20 +248,11 @@ final class FontInstallerSuite extends munit.FunSuite:
   workspace.test("a manifest reset mid-stream warns with its cause and installs anyway"): ws =>
     val root         = ws / "fonts"
     val sink         = RecordingSink()
-    val resetPartway = Body.Streamed: () =>
-      new InputStream:
-        private var served       = 0
-        override def read(): Int =
-          if served < 2 then
-            served += 1
-            'a'.toInt
-          else throw IOException("Connection reset")
+    val resetPartway = Body.failingAfter(2, "Connection reset", okByte = 'a'.toInt)
     val http         = InMemoryHttpClient(
       Map(
         manifestUrl         -> Response.Served(200, Map.empty, resetPartway),
-        downloadUrl("Hack") -> Response.ok(
-          FontZips.family("Hack"),
-        ),
+        downloadUrl("Hack") -> Response.ok(FontZips.family("Hack")),
       ),
     )
     assertEquals(installer(ws, http).install(request(root, Vector(hack)), sink), Right(()))

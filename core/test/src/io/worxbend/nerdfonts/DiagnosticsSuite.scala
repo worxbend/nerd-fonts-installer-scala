@@ -37,5 +37,5 @@ final class DiagnosticsSuite extends munit.FunSuite:
     assertEquals(Diagnostics.describe(DirectoryNotEmptyException("/fonts")), "directory not empty")
 
   test("a FileSystemException that does carry a reason uses it verbatim"):
-    val error = AccessDeniedException("/root/fonts", null, "custom reason")
+    val error = AccessDeniedException("/root/fonts", "", "custom reason")
     assertEquals(Diagnostics.describe(error), "custom reason")

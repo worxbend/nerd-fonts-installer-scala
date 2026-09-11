@@ -80,14 +80,7 @@ final class HttpClientContractSuite extends munit.FunSuite:
     assertEquals(result, Right("héllo"))
 
   test("getString reports a mid-body IOException as Transport instead of letting it escape"):
-    val failingAfterAFewBytes = InMemoryHttpClient.Body.Streamed: () =>
-      new InputStream:
-        private var served       = 0
-        override def read(): Int =
-          if served < 3 then
-            served += 1
-            'x'.toInt
-          else throw java.io.IOException("Connection reset")
+    val failingAfterAFewBytes = InMemoryHttpClient.Body.failingAfter(3, "Connection reset")
     val result                =
       client(Response.Served(200, Map.empty, failingAfterAFewBytes)).getString(HttpRequest(url), limit)
     assertEquals(result, Left(HttpError.Transport("Connection reset")))
