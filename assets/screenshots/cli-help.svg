@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="741.6" height="402" viewBox="0 0 741.6 402" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, &quot;DejaVu Sans Mono&quot;, &quot;Liberation Mono&quot;, monospace" font-size="14" role="img" aria-label="nerd-fonts-installer --help">
+<title>nerd-fonts-installer --help</title>
+<defs><linearGradient id="chrome" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#221F35"/><stop offset="1" stop-color="#1C1B2A"/></linearGradient><clipPath id="window"><rect x="0.5" y="0.5" width="740.6" height="401" rx="12"/></clipPath></defs>
+<rect x="0.5" y="0.5" width="740.6" height="401" rx="12" fill="#13131F" stroke="#2C2A44"/>
+<g clip-path="url(#window)"><rect x="0" y="0" width="741.6" height="30" fill="url(#chrome)"/><rect x="0" y="29.5" width="741.6" height="1" fill="#2C2A44"/></g>
+<circle cx="20" cy="15" r="5.5" fill="#FF5F57"/><circle cx="39" cy="15" r="5.5" fill="#FEBC2E"/><circle cx="58" cy="15" r="5.5" fill="#28C840"/>
+<text x="370.8" y="19.5" font-size="12" fill="#8A87A8" text-anchor="middle">nerd-fonts-installer --help</text>
+<text x="18" y="44" fill="#54E08A" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve" font-weight="700">$</text>
+<text x="34.8" y="44" fill="#EDEDF7" textLength="226.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">nerd-fonts-installer --help</text>
+<text x="18" y="62" fill="#EDEDF7" textLength="310.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Nerd Fonts, installed the boring way.</text>
+<text x="18" y="80" fill="#EDEDF7" textLength="604.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Usage: nerd-fonts-installer [-h] [-dry-run] [-font-names] [-interactive]</text>
+<text x="253.2" y="98" fill="#EDEDF7" textLength="361.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">[-version] [-config=&lt;path&gt;] [-icons=&lt;mode&gt;]</text>
+<text x="18" y="116" fill="#EDEDF7" textLength="529.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Install Nerd Fonts from a config file or an interactive picker.</text>
+<text x="68.4" y="134" fill="#EDEDF7" textLength="201.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">-config, --config=&lt;path&gt;</text>
+<text x="253.2" y="152" fill="#EDEDF7" textLength="403.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">config file; when omitted, discover an app-named</text>
+<text x="270" y="170" fill="#EDEDF7" textLength="352.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">config in CWD or the user config directory</text>
+<text x="68.4" y="188" fill="#EDEDF7" textLength="588" lengthAdjust="spacingAndGlyphs" xml:space="preserve">-dry-run, --dry-run   print planned downloads without installing fonts</text>
+<text x="68.4" y="206" fill="#EDEDF7" textLength="210" lengthAdjust="spacingAndGlyphs" xml:space="preserve">-font-names, --font-names</text>
+<text x="253.2" y="224" fill="#EDEDF7" textLength="403.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">print YAML-ready Nerd Font family names and exit</text>
+<text x="68.4" y="242" fill="#EDEDF7" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">-icons, --icons=&lt;mode&gt;</text>
+<text x="253.2" y="260" fill="#EDEDF7" textLength="386.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">interactive icon mode: auto, nerd, unicode, or</text>
+<text x="270" y="278" fill="#EDEDF7" textLength="176.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ascii (default: auto)</text>
+<text x="68.4" y="296" fill="#EDEDF7" textLength="226.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">-interactive, --interactive</text>
+<text x="253.2" y="314" fill="#EDEDF7" textLength="403.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">start the terminal picker when no config file is</text>
+<text x="270" y="332" fill="#EDEDF7" textLength="42" lengthAdjust="spacingAndGlyphs" xml:space="preserve">found</text>
+<text x="68.4" y="350" fill="#EDEDF7" textLength="470.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">-version, --version   print version information and exit</text>
+<text x="34.8" y="368" fill="#EDEDF7" textLength="420" lengthAdjust="spacingAndGlyphs" xml:space="preserve">-h, -help, --help         print this help and exit</text>
+</svg>

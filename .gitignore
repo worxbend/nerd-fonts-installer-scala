@@ -42,3 +42,7 @@ checksums.txt
 # Agent tooling
 .claude/
 .agents/
+
+# Python bytecode from the screenshot harness
+__pycache__/
+*.pyc

@@ -1,0 +1,20 @@
+# v3.5.1
+families:
+  - 0xProto
+  - 3270
+  - AdwaitaMono
+  - Agave
+  - AnnotationMono
+  - AnonymousPro
+  - Arimo
+  - AtkinsonHyperlegibleMono
+  - AurulentSansMono
+  - BigBlueTerminal
+  - BitstreamVeraSansMono
+  - CascadiaCode
+  - CascadiaMono
+  - CodeNewRoman
+  - ComicShannsMono
+  - CommitMono
+  - Cousine
+  - D2Coding
