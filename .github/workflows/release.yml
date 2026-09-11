@@ -84,10 +84,13 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
-          # A workflow_dispatch re-publish must build the named tag, not whatever HEAD the dispatch was
-          # started from: default checkout resolves `github.ref`, which for workflow_dispatch is the
-          # triggering branch (main), not `inputs.version`.
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref }}
+          # Pin to the exact commit that triggered this run, not a branch name: `github.ref` is a moving
+          # reference that actions/checkout re-resolves to the branch's CURRENT tip at checkout time, so a
+          # push-triggered run whose branch moves during the (~10 min) build matrix would silently check out
+          # a newer commit than the one that triggered it — breaking `git tag -f latest "${GITHUB_SHA}"` in
+          # the publish job below with "nonexistent object" once the shallow, wrong-commit clone can't find
+          # it. A workflow_dispatch re-publish must build the named tag instead of the dispatching commit.
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.sha }}
 
       - name: Resolve version
         id: version
@@ -192,9 +195,10 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
-          # Match the build jobs: a workflow_dispatch re-publish needs the tagged commit (for
-          # scripts/install.sh below), not the branch the dispatch was started from.
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref }}
+          # Match the build jobs (see the comment there): pin to `github.sha`, not the moving `github.ref`,
+          # so this checkout — and `git tag -f latest "${GITHUB_SHA}"` below — see the commit that actually
+          # triggered this run even if main has moved on by the time this job starts.
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.sha }}
 
       - name: Download artifacts
         uses: actions/download-artifact@v4
