@@ -97,17 +97,19 @@ Root package: `io.worxbend.nerdfonts`. Packages are named after concepts.
 
 ### 3.2 `config` module — `io.worxbend.nerdfonts.config`
 
-`ConfigLoader.load(path: os.Path): Either[ConfigError, InstallConfig]`, `ConfigDocument` (raw decoded shape,
+`ConfigLoader.load(path: os.Path): IO[ConfigError, InstallConfig]`, `ConfigDocument` (raw decoded shape,
 `Option` fields, before defaults). Decoding is delegated to **zio-config 4.1.0**: `.yaml`/`.yml` through the
 YAML provider (`zio-config-yaml`), `.json` and `.conf`/`.hocon` through Typesafe Config (`zio-config-typesafe`,
-HOCON being a superset of JSON), with `zio-config-magnolia` deriving the reader from `ConfigDocument`. An
+HOCON being a superset of JSON). zio-config does **not** read `ConfigDocument` directly: a `ConfigDto` case
+class of `Option`s carries the magnolia-derived `Config[ConfigDto]`, and the decoded DTO is mapped onto the
+unchanged `ConfigDocument`, which still owns the Go `ApplyDefaults` + `Normalize` + `Validate` sequence. An
 unknown or missing extension is a hard error, not a silent guess (§4). Whichever format read the file, one
 `ConfigDocument` is produced, then defaulted and validated once. `DiscoveredConfig(path: os.Path, config: InstallConfig)` (the Scala
-counterpart of Go's `config.Source`), `ConfigLocations.candidates(env): Either[ConfigError, Vector[os.Path]]`
-(the ordered, de-duplicated candidate list), `ConfigDiscovery.discover(env, load): Either[ConfigError, Option[DiscoveredConfig]]`
-(first candidate that exists is loaded; `None` when none exists; an existing candidate that fails to load is
-`Left` — never skipped), `ConfigError` ADT (`NotFound(path)`, `Unreadable(path, cause)`, `Parse(path, message)`,
-`UnknownField(path, field)`, `WrongType(path, field, expected)`, `Invalid(path, ConfigValidationError)`,
+counterpart of Go's `config.Source`), `ConfigLocations.candidates(env): IO[ConfigError, Vector[os.Path]]`
+(the ordered, de-duplicated candidate list), `ConfigDiscovery.discover(env, load): IO[ConfigError, Option[DiscoveredConfig]]`
+(first candidate that exists is loaded; `None` when none exists; an existing candidate that fails to load
+fails the effect — never skipped), `ConfigError` ADT (`NotFound(path)`, `Unreadable(path, cause)`,
+`Parse(path, message)`, `UnsupportedFormat(path, extension)`, `Invalid(path, ConfigValidationError)`,
 `NoWorkingDirectory(cause)`). `ConfigError.render` yields the detail only; `Application` adds the
 `load config <path>: ` / `load discovered config <path>: ` prefixes (§4). No origin marker is carried on
 `InstallConfig`: the branch taken in `Application.resolveConfig` decides whether `Using config <path>` is printed.
@@ -124,9 +126,10 @@ counterpart of Go's `config.Source`), `ConfigLocations.candidates(env): Either[C
   `--config ""` as explicit and echoes the raw path). `--font-names` selects `FontNames`; otherwise `Install`.
 - `AppDependencies` — the seams between `Application` and the world (the Go `dependencies` struct):
   `loadConfig`, `discoverConfig`, `configCandidates`, `listReleases`, `installFonts`, `expandDestination`, plus
-  `environment` and `colours`. The effectful seams (`listReleases`, `installFonts`) are ZIO effects
-  (`IO[ReleaseError, Vector[Release]]`, `IO[InstallError, Unit]`); the pure decode/discovery seams return
-  `Either[…]`. Tests substitute a fake at each seam.
+  `environment` and `colours`. The effectful seams are ZIO effects — `loadConfig`/`discoverConfig`/
+  `configCandidates` (`IO[ConfigError, …]`, the config module now being ZIO), `listReleases`
+  (`IO[ReleaseError, Vector[Release]]`) and `installFonts` (`IO[InstallError, Unit]`); the pure path-expansion
+  seam returns `Either[PathError, …]`. Tests substitute a fake at each seam.
 - `Application.run(options: CliOptions, deps: AppDependencies, out, err)`
   composed of `resolveConfig`, `printFontNames`, `selectRelease`, `install`; never sees `args` or
   the parser. Its result is `Either[AppFailure, AppOutcome]`.
@@ -171,18 +174,25 @@ error, not a silent guess. It is a `ConfigError` like any other config-load fail
 that was found but could not be understood. Decoding is handled by
 zio-config's providers: YAML through `zio-config-yaml`, and JSON and HOCON both through Typesafe Config
 (`zio-config-typesafe`), because HOCON is a superset of JSON. JSON is therefore parsed leniently — comments and
-unquoted keys are accepted rather than rejected. All three readers are strict about the schema: an unknown key
-is an error. **Two breaking changes from the pre-ZIO port:** `.conf` was previously decoded as YAML and is now
+unquoted keys are accepted rather than rejected. **Unrecognised keys are ignored, not rejected:** zio-config has
+no strict-schema mode and emulating one would cost a second parse of every file, so the four known keys decode
+normally and any other key is silently dropped. The honest practical cost is that a misspelled key such as
+`familes:` is not reported as a typo — it leaves `families` at its default and surfaces one step later as
+`at least one font family is required`. No security invariant depends on this: every family name is still
+validated by `FamilyName.parse` before it reaches a path or URL. A scalar where a list is expected is silently
+coerced, so `families: FiraCode` decodes as `Vector("FiraCode")` rather than failing. **Two breaking changes
+from the pre-ZIO port:** `.conf` was previously decoded as YAML and is now
 HOCON (a flat `key: value` file parses identically, but a YAML block sequence must become
 `families = ["JetBrainsMono"]` or be renamed `.yaml`); and an unknown or missing extension is now an error
-instead of a YAML guess.
+instead of a YAML guess. (Unknown-key rejection, which the pre-ZIO port and the Go reference both did, is
+deliberately gone — see PARITY.md for the Go-parity divergence.)
 
 | Key | Required | Default | Notes |
 | --- | :-: | --- | --- |
 | `release` | no | `latest` | `latest` or a tag such as `v3.4.0`; trimmed; blank after trim is an error |
 | `destination` | no | `~/.local/share/fonts/NerdFonts` | trimmed; blank after trim is an error; `~` expanded by `Application` via `PathExpander` before the install request is built (§6.1) |
-| `refresh_font_cache` | no | `false` | boolean |
-| `families` | yes | — | list of strings; each trimmed then validated by `FamilyName`; duplicates are an error |
+| `refresh_font_cache` | no | `false` | boolean; the DTO field carries a `@name("refresh_font_cache")` (`zio.config.derivation.name`) because magnolia binds field names verbatim (see below) |
+| `families` | yes | — | list of strings; a bare scalar is coerced to a one-element list; each trimmed then validated by `FamilyName`; duplicates are an error |
 
 Whichever provider reads the file, the four keys above are read into one `ConfigDocument`, the Go defaults are
 applied, and `InstallConfig.validated` enforces the rules in `core` (blank-after-trim is an error, `families`
@@ -190,6 +200,19 @@ entries are each validated by `FamilyName`, duplicates are rejected, at least on
 scalar coercion (e.g. `families: [3270]` taken as the string `"3270"`, boolean spellings for
 `refresh_font_cache`, a null leaving a default) follows the zio-config YAML provider and Typesafe Config; the
 parity-critical schema, defaults and validation messages are the contract and do not depend on the format.
+
+Two mechanics of the zio-config binding are load-bearing and easy to break:
+
+- **Snake-case is bound by annotation, not derivation.** magnolia applies no naming transform, so the DTO field
+  names bind to the config keys verbatim. `release`, `destination` and `families` are single words and bind as
+  written; `refresh_font_cache` is the one snake-case key, so its field carries `@name("refresh_font_cache")`.
+  Dropping that annotation would not fail — the reader would silently find nothing and fall back to the
+  `false` default, so the annotation must stay.
+- **A malformed file throws at provider construction, before the load.** A syntactically broken YAML/JSON/HOCON
+  file does not yield a `Config.Error`; the underlying library throws while the provider is being built
+  (`ParserException` for YAML, `ConfigException$Parse` for HOCON/JSON). Provider construction is therefore
+  wrapped in `ZIO.attempt` and mapped to `ConfigError.Parse`. A raw `Config.Error` is never printed directly —
+  its `toString` embeds a ZIO fiber stack trace — so it is folded to a single line first.
 
 Resolution order (highest first), implemented in `Application` + `ConfigLocations`:
 
@@ -208,8 +231,9 @@ cannot be resolved (and `$XDG_CONFIG_HOME` is not absolute) the config-home cand
 the working directory cannot be determined, discovery fails with `locate current directory: <cause>` — exit 1
 (also on the `--font-names` path).
 
-Discovery (`ConfigDiscovery.discover`) returns `Some(DiscoveredConfig(path, config))` for the first candidate
-that exists, `None` if none exists, and a `ConfigError` (fatal: `load discovered config <path>: <cause>`, exit 1)
+Discovery (`ConfigDiscovery.discover`) succeeds with `Some(DiscoveredConfig(path, config))` for the first
+candidate that exists, `None` if none exists, and fails with a `ConfigError` (fatal:
+`load discovered config <path>: <cause>`, exit 1)
 if an existing candidate fails to load — only a not-exists error skips to the next candidate.
 `Application.resolveConfig` prints `Using config <path>` to stderr **only** in the discovered branch; explicit and
 env-var configs print nothing. `printFontNames` also falls back to a discovered config for `release` but never
@@ -495,10 +519,12 @@ Tests are **zio-test** (`zio.test.sbt.ZTestFramework`); every port is faked and 
   warns; fc-cache non-zero fails; interrupt during download (a fake `HttpClient` whose body stream blocks until
   the test interrupts the installing fiber) removes the temp zip and staging dir, leaves the pre-existing family
   dir intact, and does not deadlock; per-family deadline (tiny limit in test) yields `TimedOut` with cleanup done.
-- `config`: defaults, trimming, unknown field, wrong type, blank-after-trim per field, duplicates, per-format
+- `config`: defaults, trimming, blank-after-trim per field, duplicates, unrecognised keys ignored (a misspelled
+  key falls back to the default), a bare scalar coerced to a one-element `families` list, per-format
   decoding (YAML, JSON, HOCON), `.conf`/`.hocon` decoded as HOCON, `.yaml`/`.yml` as YAML, `.json`/`.JSON` as
-  JSON, an unknown or missing extension is a hard error (a `ConfigError`, exit 1 like every other config-load
-  failure), discovery order, de-duplication when
+  JSON, an unknown or missing extension is a hard error (`ConfigError.UnsupportedFormat`, exit 1 like every
+  other config-load failure), a malformed file mapped to `ConfigError.Parse` (single-line message, no fiber
+  trace), discovery order, de-duplication when
   cwd = config home, XDG rules (absolute vs relative), missing home omits config-home candidates,
   existing-but-broken candidate is fatal.
 - `cli`: golden tests through `Cli` with fake dependencies for every exit-code path: `--version` format,
@@ -556,9 +582,12 @@ carries the reasoning; `docs/PARITY.md` the measured comparison with Go.
 - **§4 empty documents and BOM** now follow zio-config's YAML provider and Typesafe Config rather than the
   pre-ZIO scala-yaml/ujson stack; the parity-relevant outcome is unchanged — an empty or absent document leaves
   every key unset, so validation reports `at least one font family is required`.
-- **§4 unknown-key wording** is the schema decoder's `unknown field "<key>"` under the `load config <path>: `
-  prefix; the prefix, stream and exit code are what parity checks, and they match Go regardless of the exact
-  detail text the zio-config reader produces.
+- **§4 unrecognised keys are ignored, not rejected.** zio-config has no strict-schema mode, so a key the schema
+  does not know is silently dropped and the known keys decode normally; a misspelled key falls back to its
+  default and surfaces later as a validation message (e.g. `at least one font family is required`). This
+  diverges from Go (and from the pre-ZIO port), which reported `unknown field "<key>"`; the Go-parity divergence
+  is recorded in PARITY.md. No security invariant depends on it — `FamilyName.parse` still guards every family
+  name before it reaches a path or URL.
 - **§4 `ReleaseTag.parse` and `DestinationPath.parse` return `Option`**; `InstallConfig.validated` turns absence
   into `release is required` / `destination is required`.
 - **§8 `--help`** goes to stdout with exit 0 (as §1 states); an unknown flag prints the hand-rolled parser's

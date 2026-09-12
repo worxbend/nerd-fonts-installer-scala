@@ -18,7 +18,7 @@ terminal code; zio-http appears only inside its own `http` adapter (`ZioHttpClie
 | Module | Third-party dependencies | Role |
 | --- | --- | --- |
 | `core` | zio, zio-streams, zio-json, zio-http, os-lib | Domain values, ports and adapters, release catalogue, install engine |
-| `config` | zio-config (yaml, typesafe, magnolia) | Strict YAML/JSON/HOCON decoding, defaults, discovery |
+| `config` | zio-config (yaml, typesafe, magnolia) | YAML/JSON/HOCON decoding (unknown keys ignored), defaults, discovery |
 | `cli` | fansi | Process boundary, hand-rolled parser, `Application`, exit codes, event renderer, composition root, generated `BuildInfo` |
 | `app` | — | `Main` (`ZIOAppDefault`), native-image build; the `NativeImageModule` |
 
@@ -69,13 +69,14 @@ Deadlines and concurrency constants live on the `FontInstaller` companion: `maxC
 
 | Type | Role |
 | --- | --- |
-| `ConfigLoader.load(path): Either[ConfigError, InstallConfig]` | The only route from a file to an `InstallConfig`: read (`NotFound` vs `Unreadable`), decode by extension through zio-config, default, validate through `InstallConfig.validated` |
+| `ConfigLoader.load(path): IO[ConfigError, InstallConfig]` | The only route from a file to an `InstallConfig`: read (`NotFound` vs `Unreadable`), decode by extension through zio-config, default, validate through `InstallConfig.validated`. The config module is ZIO — `load`, `candidates` and `discover` are all effects |
 | `ConfigDocument` | What the file said: four `Option` fields, text untrimmed. `validated` applies the Go defaults (`latest`, `~/.local/share/fonts/NerdFonts`, refresh off, no families) and delegates to `core` |
-| Decoding (zio-config 4.1.0) | Delegated to zio-config: YAML via `zio-config-yaml`, JSON and HOCON via Typesafe Config (`zio-config-typesafe`, HOCON being a superset of JSON), the reader derived from `ConfigDocument` by `zio-config-magnolia`. Whichever provider reads the file, one `ConfigDocument` results; an unknown key is an error |
-| `ConfigFormat` (`private[config]`) | Chooses the provider by the last extension (Go `filepath.Ext`, compared case-insensitively): `.json` → JSON, `.yaml`/`.yml` → YAML, `.conf`/`.hocon` → HOCON. Any other extension, or none, is a hard error (§4) — **not** a silent YAML guess (a breaking change from the pre-ZIO port, where `.conf` and unknown extensions were decoded as YAML) |
-| `ConfigLocations.candidates(env): Either[ConfigError, Vector[os.Path]]` | Ordered, de-duplicated candidate list (§4); also owns `appName`, `extensions` and `configVariable` (`NERD_FONTS_INSTALLER_CONFIG`) so `cli` shares the literals |
-| `ConfigDiscovery.discover(env, load): Either[ConfigError, Option[DiscoveredConfig]]` | First existing candidate; `DiscoveredConfig(path, config)` is the Go `config.Source` |
-| `ConfigError` | `NotFound`, `Unreadable`, `Parse`, `UnknownField`, `WrongType`, `Invalid(ConfigValidationError)`, `NoWorkingDirectory`; `render` is the detail only, the CLI adds `load config <path>: ` / `load discovered config <path>: ` |
+| `ConfigDto` (`private[config]`) | The magnolia-derived shape zio-config actually reads: a case class of `Option`s carrying `Config[ConfigDto]`. zio-config does **not** read `ConfigDocument` directly; the decoded DTO is mapped onto `ConfigDocument`. Field names bind verbatim (magnolia applies no naming transform), so the one snake-case key carries `@name("refresh_font_cache")` (`zio.config.derivation.name`); the other three (`release`, `destination`, `families`) are single words and need no annotation. Dropping the annotation would silently read nothing and fall back to the default, so it must stay |
+| Decoding (zio-config 4.1.0) | Delegated to zio-config: YAML via `zio-config-yaml`, JSON and HOCON via Typesafe Config (`zio-config-typesafe`, HOCON being a superset of JSON), the `Config[ConfigDto]` derived by `zio-config-magnolia`. Whichever provider reads the file, one `ConfigDocument` results. **Unrecognised keys are ignored** (zio-config has no strict mode; emulating one costs a second parse), and a scalar where a list is expected is coerced, so `families: FiraCode` decodes as `Vector("FiraCode")`. A malformed file throws at provider construction (`ParserException` for YAML, `ConfigException$Parse` for HOCON/JSON) rather than yielding a `Config.Error`, so construction is wrapped in `ZIO.attempt` and mapped to `ConfigError.Parse`; a raw `Config.Error` (whose `toString` embeds a fiber trace) is never printed directly |
+| `ConfigFormat` (`private[config]`) | Chooses the provider by the last extension (Go `filepath.Ext`, compared case-insensitively): `.json` → JSON, `.yaml`/`.yml` → YAML, `.conf`/`.hocon` → HOCON. Any other extension, or none, is `ConfigError.UnsupportedFormat` (§4) — **not** a silent YAML guess (a breaking change from the pre-ZIO port, where `.conf` and unknown extensions were decoded as YAML) |
+| `ConfigLocations.candidates(env): IO[ConfigError, Vector[os.Path]]` | Ordered, de-duplicated candidate list (§4); also owns `appName`, `extensions` and `configVariable` (`NERD_FONTS_INSTALLER_CONFIG`) so `cli` shares the literals |
+| `ConfigDiscovery.discover(env, load): IO[ConfigError, Option[DiscoveredConfig]]` | First existing candidate; `DiscoveredConfig(path, config)` is the Go `config.Source` |
+| `ConfigError` | `NotFound`, `Unreadable`, `Parse`, `UnsupportedFormat`, `Invalid(ConfigValidationError)`, `NoWorkingDirectory`; `render` is the detail only, the CLI adds `load config <path>: ` / `load discovered config <path>: `. `NotFound` stays distinct because discovery skips only that case; every other case, including `UnsupportedFormat`, is fatal and exits 1 |
 
 Test-side helper: `config.ConfigFiles.write(dir, name, text)` (package-private) writes fixtures into a suite's temp
 directory.
@@ -190,12 +191,15 @@ unwinding finalizers; Go's `flag` is a hand-rolled double-dash parser.
 9. **One loader for every config route.** `--config`, `$NERD_FONTS_INSTALLER_CONFIG` and every discovered
    candidate go through `ConfigLoader.load`; defaults and validation are applied exactly once, in
    `ConfigDocument.validated`, whichever format produced the document. Decoders never see defaults.
-10. **Discovery skips only `NotFound`.** A candidate that exists but cannot be read, parsed or validated is
-    returned as the error, never skipped (Go: `errors.Is(err, os.ErrNotExist)`).
-11. **Strict keys, unknown extension fatal.** Decoding is delegated to zio-config across JSON, YAML and HOCON;
-    an unknown key or a value of the wrong shape fails the load with the field named. Extension selection is
-    exhaustive: `.json`/`.yaml`/`.yml`/`.conf`/`.hocon` map to their formats and any other extension is a hard
-    error — never a silent YAML guess.
+10. **Discovery skips only `NotFound`.** A candidate that exists but cannot be read, parsed or validated fails
+    the effect, never skipped (Go: `errors.Is(err, os.ErrNotExist)`).
+11. **Lenient keys, unknown extension fatal.** Decoding is delegated to zio-config across JSON, YAML and HOCON,
+    which has no strict-schema mode: an unrecognised key is ignored (the known keys decode normally) and a
+    scalar where a list is expected is coerced (`families: FiraCode` → `Vector("FiraCode")`). The safety net is
+    elsewhere — every family name still passes `FamilyName.parse` (invariant 1) — so leniency here costs a
+    misspelled key a helpful error, not a security guarantee. Extension selection, by contrast, is exhaustive:
+    `.json`/`.yaml`/`.yml`/`.conf`/`.hocon` map to their formats and any other extension is
+    `ConfigError.UnsupportedFormat`, never a silent YAML guess.
 12. **Installs are staged, then renamed.** A family is extracted into `<root>/.<Family>-<random>` and becomes
     live only through `DirectorySwap.replace`: remove a stale `<target>.old`, rename the existing target to
     `.old`, rename the staging directory into place. The second rename is the commit point: before it a
@@ -278,16 +282,33 @@ one concern per function; scaladoc on public types explains why, not what.
   `ReleaseError.Decode`, matching Go's `encoding/json` rather than silently coercing.
 - **Config decoding is delegated to zio-config 4.1.0.** The hand-rolled `ConfigNode`/`ConfigFieldDecoder` tree
   and its per-format adapters are gone. YAML is read by `zio-config-yaml`, JSON and HOCON by `zio-config-typesafe`
-  (Typesafe Config, HOCON being a superset of JSON), and the `ConfigDocument` reader is derived by
-  `zio-config-magnolia`. One document type, one validation path (`ConfigDocument.validated`), whichever provider
-  read the file; strict keys (an unknown key fails, named) and typed leaves come from zio-config rather than a
-  bespoke scalar-coercion table.
+  (Typesafe Config, HOCON being a superset of JSON). zio-config does not read `ConfigDocument` directly: a
+  `ConfigDto` case class of `Option`s holds the magnolia-derived `Config[ConfigDto]`, and the decoded DTO is
+  mapped onto the unchanged `ConfigDocument`, which keeps the Go `ApplyDefaults` + `Normalize` + `Validate`
+  sequence and its one validation path (`ConfigDocument.validated`), whichever provider read the file.
+- **Unknown keys are accepted, not rejected.** zio-config has no strict-schema mode and emulating one (a second
+  parse to diff the key set) was judged not worth the cost, because nothing downstream depends on it: every
+  family name is validated by `FamilyName.parse` before it touches a path or URL (invariant 1), so a stray key
+  cannot smuggle anything past the trust boundary. The accepted price is that a misspelled key such as
+  `familes:` is silently ignored and surfaces later as `at least one font family is required` rather than as a
+  spelling error; a scalar where a list is expected is likewise coerced (`families: FiraCode` →
+  `Vector("FiraCode")`). This drops the strict-key rejection the pre-ZIO port and the Go reference both had; the
+  Go-parity divergence is recorded in PARITY.md. `ConfigError.UnknownField` and `ConfigError.WrongType` became
+  unreachable and were deleted.
+- **A malformed config file throws at provider construction, not as a `Config.Error`.** The YAML and Typesafe
+  Config parsers raise (`ParserException`, `ConfigException$Parse`) while the provider is being built, before
+  the load runs, so provider construction is wrapped in `ZIO.attempt` and mapped to `ConfigError.Parse`. A raw
+  `Config.Error` is never rendered directly — its `toString` embeds a ZIO fiber stack trace — so it is folded to
+  a single line first.
 - **Format is chosen by extension, and an unknown extension is fatal.** `.json` → JSON, `.yaml`/`.yml` → YAML,
-  `.conf`/`.hocon` → HOCON (Go `filepath.Ext`, case-insensitive); any other extension, or none, is a hard error.
-  This is a deliberate breaking change from the pre-ZIO port, where `.conf` and every unrecognised extension were
-  decoded as YAML — a silent guess that could parse a HOCON file as YAML and mis-report the failure.
+  `.conf`/`.hocon` → HOCON (Go `filepath.Ext`, case-insensitive); any other extension, or none, is
+  `ConfigError.UnsupportedFormat`, which like every other `ConfigError` exits 1 (exit 2 is reserved for
+  command-line usage errors). This is a deliberate breaking change from the pre-ZIO port, where `.conf` and
+  every unrecognised extension were decoded as YAML — a silent guess that could parse a HOCON file as YAML and
+  mis-report the failure.
 - **`ConfigError` cases carry the path and decoders receive it.** One error ADT for read, decode, validate and
-  discovery avoids a second decode-error type that would be remapped case by case in `ConfigLoader`.
+  discovery avoids a second decode-error type that would be remapped case by case in `ConfigLoader`. `NotFound`
+  is kept deliberately distinct from the rest because discovery skips only that case.
 - **`Environment` is the only input to discovery.** `ConfigLocations` never reads `sys.env`; `$XDG_CONFIG_HOME` counts
   only when absolute (Go `filepath.IsAbs`), a missing home silently drops the config-home half, a missing working
   directory is `ConfigError.NoWorkingDirectory` rendered `locate current directory: <cause>`.
