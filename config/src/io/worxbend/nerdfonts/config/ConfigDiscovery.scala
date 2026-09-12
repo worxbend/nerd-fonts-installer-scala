@@ -9,9 +9,9 @@ import zio.ZIO
 /**
  * Walks the candidate list and loads the first file that exists.
  *
- * Only "does not exist" moves on to the next candidate (Go: `errors.Is(err, os.ErrNotExist)`). A candidate
- * that exists but fails to read, parse or validate is returned as the error, never skipped: silently falling
- * through to a later file would hide the broken file the user most likely meant to use.
+ * Only "does not exist" moves on to the next candidate. A candidate that exists but fails to read, parse or
+ * validate is returned as the error, never skipped: silently falling through to a later file would hide the
+ * broken file the user most likely meant to use.
  */
 object ConfigDiscovery:
   def discover(

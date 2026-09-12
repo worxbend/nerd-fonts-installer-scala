@@ -24,8 +24,8 @@ import zio.ZIOAppDefault
  * exit-130, because that default does not unwind finalizers (and native-image is simply killed): a
  * half-downloaded `nerd-font-*.zip` and a `<root>/.<Family>-*` staging directory would be left behind. ZIO
  * fiber interruption ends every `.ensuring`/`ZIO.acquireRelease` finalizer first, then `Cli.run` reports the
- * interrupt and returns exit 1, which is what Go's cancelled context achieves. A second SIGINT while that is in
- * progress halts the process outright with 130, the one escape hatch the reference does not offer (SPEC §6.8).
+ * interrupt and returns exit 1. A second SIGINT while that is in progress halts the process outright with
+ * 130, the one escape hatch for a hung finalizer (SPEC §6.8).
  *
  * The exit code is produced by calling `exit`, not by returning an `ExitCode` value: a returned value leaves
  * the process exiting 0.

@@ -12,10 +12,11 @@ import zio.ZIO
 /**
  * The process boundary: hand-rolled parsing, `--help`/`--version`, and the exit code.
  *
- * `--help` prints usage to **stdout** and exits 0 (the one deliberate deviation from Go, which uses stderr and
- * exit 2); `--version` prints its line to stdout and exits 0; an unknown flag or a single-dash long flag prints
- * a message plus the usage to **stderr** and exits 2 (SPEC §7). Only the install and font-names paths build the
- * production dependencies, so `--help`/`--version`/a usage error never start a Netty event loop.
+ * `--help` prints usage to **stdout** and exits 0 because it is a *requested, successful* output; a usage
+ * error is different and goes to **stderr** with exit 2. `--version` also prints to stdout and exits 0; an
+ * unknown flag or a single-dash long flag prints a message plus the usage to stderr and exits 2 (SPEC §7).
+ * Only the install and font-names paths build the production dependencies, so `--help`/`--version`/a usage
+ * error never start a Netty event loop.
  *
  * The whole boundary is a `ZIO` value that `app.Main` (`ZIOAppDefault`) executes. Nothing here returns an
  * `ExitCode` value to the runtime: the exit code is computed and `Main` calls `exit`, because returning an
@@ -71,8 +72,8 @@ object Cli:
       ExitCode.usage
     case ParseResult.Options(_)     => ExitCode.success
 
-  // Go's `os.CreateTemp("", …)` honours `$TMPDIR`, falling back to `/tmp` on Unix when it is unset; the JDK's
-  // `java.io.tmpdir` is the same `/tmp` on Linux, so it is consulted next and the hard-coded `/tmp` is only a
+  // Downloads honour `$TMPDIR`, falling back to `/tmp` on Unix when it is unset; the JDK's `java.io.tmpdir`
+  // is the same `/tmp` on Linux, so it is consulted next and the hard-coded `/tmp` is only a
   // last resort for a JVM that somehow has neither. Both are read through the `Environment` port (invariant
   // 7): nothing below the composition root reads `sys.env`/`sys.props`, and this is the composition root
   // itself. The path is made absolute in case any of the three is relative.
@@ -88,10 +89,9 @@ object Cli:
   private val tempDirProperty = "java.io.tmpdir"
 
   /**
-   * The usage text, printed for `--help` and appended after a usage-error message. The options are listed in
-   * Go's order (`config, dry-run, font-names, version`, which `flag` sorts alphabetically) with help last,
-   * because Go does not list `--help` at all. Only the double-dash spelling of each is shown; `-h` and `-help`
-   * remain accepted as help aliases, so both appear on the help line.
+   * The usage text, printed for `--help` and appended after a usage-error message. The options are listed
+   * alphabetically (`config, dry-run, font-names, version`) with `--help` last. Only the double-dash spelling
+   * of each is shown; `-h` and `-help` remain accepted as help aliases, so both appear on the help line.
    */
   private[cli] val usageText: String = Vector(
     "Nerd Fonts, installed the boring way.",

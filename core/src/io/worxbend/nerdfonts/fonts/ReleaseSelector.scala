@@ -16,7 +16,7 @@ enum ReleaseSelector:
     case Tagged(tag) => tag.value
 
 object ReleaseSelector:
-  /** The literal the Go reference compares against, case-sensitively. */
+  /** The literal that selects the newest release, compared against case-sensitively. */
   val latestKeyword: String = "latest"
 
   /** A blank value or the keyword `latest` selects the newest release; anything else is a tag. */

@@ -11,12 +11,12 @@ import zio.IO
 import zio.ZIO
 
 /**
- * Turns the configured destination into an absolute path with exactly the Go `expandPath` rules.
+ * Turns the configured destination into an absolute path with a small, fixed set of expansion rules.
  *
  * Only a bare `~` and a leading `~/` are expanded. `~user`, an embedded `~` and everything else are taken
- * literally, because that is what the reference does and because guessing at other users' homes would make
- * the same config file mean different things on different machines. Relative paths resolve against the
- * working directory, which is what the operating system would do with them anyway.
+ * literally, because guessing at other users' homes would make the same config file mean different things
+ * on different machines. Relative paths resolve against the working directory, which is what the operating
+ * system would do with them anyway.
  */
 object PathExpander:
   private val tildePrefix = "~/"
@@ -34,8 +34,8 @@ object PathExpander:
 
   private def home(env: Environment): IO[PathError, os.Path] = env.homeDirectory.someOrFail(PathError.NoHome)
 
-  // `Path.of(home, rest)` joins and normalises like Go's `filepath.Join`, including `..` segments and doubled
-  // separators, so `~//x` and `~/a/../b` land where Go puts them.
+  // `Path.of(home, rest)` joins and normalises, collapsing `..` segments and doubled separators, so `~//x`
+  // and `~/a/../b` resolve to the same places as their already-normalised spellings.
   private def joined(home: os.Path, rest: String, raw: String): Either[PathError, os.Path] =
     Try(os.Path(Path.of(home.toString, rest))).toEither.left.map(invalid(raw, _))
 
@@ -50,7 +50,7 @@ object PathExpander:
 
 /** Why a destination could not be turned into an absolute path. */
 enum PathError:
-  /** Go's `os.UserHomeDir` failure text on Unix. */
+  /** No home directory could be determined: `$HOME` is unset or blank. */
   case NoHome
   case NoWorkingDirectory(cause: EnvironmentError)
   case Invalid(path: String, cause: String)

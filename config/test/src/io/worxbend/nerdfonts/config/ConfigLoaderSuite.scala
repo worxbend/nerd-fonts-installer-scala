@@ -24,7 +24,7 @@ object ConfigLoaderSuite extends ZIOSpecDefault:
     result.map(_.families.map(_.value)).left.map(_.render)
 
   override def spec: Spec[TestEnvironment, Any] = suite("ConfigLoader")(
-    test("applies the Go defaults when release and destination are absent"):
+    test("applies the defaults when release and destination are absent"):
       loaded("fonts.yaml", "families: [JetBrainsMono]\n").map(config =>
         assertTrue(
           config.map(_.selector) == Right(ReleaseSelector.Latest),
@@ -33,7 +33,7 @@ object ConfigLoaderSuite extends ZIOSpecDefault:
         ),
       )
     ,
-    test("an explicit empty string also takes the default, as Go's ApplyDefaults does"):
+    test("an explicit empty string also takes the default"):
       loaded("fonts.yaml", "release: ''\ndestination: \"\"\nfamilies: [Hack]\n").map(config =>
         assertTrue(
           config.map(_.selector) == Right(ReleaseSelector.Latest),
@@ -158,7 +158,7 @@ object ConfigLoaderSuite extends ZIOSpecDefault:
         assertTrue(result.left.map(_.render) == Left("at least one font family is required")),
       )
     ,
-    test("a validation failure carries the path but renders only the Go message"):
+    test("a validation failure carries the path but renders only the message"):
       ZIO.scoped(TempDir.scoped("config-loader").flatMap { dir =>
         load(dir, "fonts.yaml", "families: []\n").either.map(result =>
           assertTrue(
@@ -171,7 +171,7 @@ object ConfigLoaderSuite extends ZIOSpecDefault:
         )
       })
     ,
-    test("a missing file is NotFound and renders Go's open error"):
+    test("a missing file is NotFound and renders the open error"):
       ZIO.scoped(TempDir.scoped("config-loader").flatMap { dir =>
         val path = dir / "missing.yaml"
         ConfigLoader

@@ -11,7 +11,7 @@ import zio.ZIO
 
 /**
  * The font cache as a port, so the engine can be tested without `fc-cache` and so the "not installed" case
- * is a value the engine turns into a warning rather than a failure (Go: `exec.LookPath` before `Run`).
+ * is a value the engine turns into a warning rather than a failure (availability is checked before running).
  */
 trait FontCacheRefresher:
   def availability: UIO[FontCacheAvailability]
@@ -33,7 +33,7 @@ enum FontCacheError:
 
 /**
  * The production refresher: `fc-cache -f <root>` through the `ProcessRunner` port with every stream
- * inherited, so its output reaches the user's terminal exactly as under Go's `exec.Command`.
+ * inherited, so its output reaches the user's terminal directly.
  */
 final class FcCacheRefresher(processes: ProcessRunner) extends FontCacheRefresher:
   def availability: UIO[FontCacheAvailability] = processes

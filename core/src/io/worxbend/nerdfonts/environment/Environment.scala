@@ -27,19 +27,19 @@ trait Environment:
   /** The value of a JVM system property, or `None` when it is not set (e.g. the `java.io.tmpdir` fallback). */
   def property(name: String): UIO[Option[String]]
 
-  /** The current user's home directory, or `None` when the process cannot determine one (Go: `os.UserHomeDir` error). */
+  /** The current user's home directory, or `None` when the process cannot determine one. */
   def homeDirectory: UIO[Option[os.Path]]
 
-  /** The directory the process was started in; a failure mirrors Go's `os.Getwd` failing. */
+  /** The directory the process was started in; a failure means the working directory cannot be determined. */
   def workingDirectory: IO[EnvironmentError, os.Path]
 
 object Environment:
   /**
    * The real environment of the running process; the only place in the codebase that reads `sys.env` or
-   * `sys.props`. `homeDirectory` reads only `$HOME`, exactly as Go's `os.UserHomeDir` does on Unix: no
-   * fallback to the JVM's passwd-derived `user.home`, so a process started with `$HOME` unset or blank has no
-   * home here either, and `PathExpander`'s `PathError.NoHome` (`$HOME is not defined`) can fire in production
-   * instead of being masked by a home the reference would never have found.
+   * `sys.props`. `homeDirectory` reads only `$HOME` on Unix, deliberately with no fallback to the JVM's
+   * passwd-derived `user.home`, so a process started with `$HOME` unset or blank has no home here either,
+   * and `PathExpander`'s `PathError.NoHome` (`$HOME is not defined`) can fire in production instead of being
+   * masked by a home derived from the passwd database.
    */
   object System extends Environment:
     def variable(name: String): UIO[Option[String]] = ZIO.succeed(sys.env.get(name))

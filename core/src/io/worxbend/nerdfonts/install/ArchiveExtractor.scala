@@ -80,8 +80,8 @@ object ArchiveExtractor:
           case Left(error) => Left(error)
           case Right(next) => extractAll(session, next)
 
-  // A header that cannot be read is reported as an unopenable archive: Go's `zip.OpenReader` validates the
-  // whole directory up front, so this is the closest equivalent for a corrupt file.
+  // A header that cannot be read is reported as an unopenable archive: a corrupt file is surfaced as a
+  // single "cannot open" failure rather than a mid-stream read error.
   private def nextEntry(session: Session): Either[ArchiveError, Option[ZipEntry]] =
     attemptIO(Option(session.entries.getNextEntry)).left
       .map(error => ArchiveError.Open(session.zip, Diagnostics.describe(error)))
@@ -168,7 +168,7 @@ object ArchiveExtractor:
     attemptIO(out.close()).left
       .map(error => ArchiveEntryError.Finalize(target, Diagnostics.describe(error)))
 
-  // Go's `filepath.Base` / `filepath.Ext` on a POSIX host: only `/` separates, a backslash is an ordinary
+  // POSIX base-name and extension semantics: only `/` separates path elements, a backslash is an ordinary
   // character, and the extension is whatever follows the last dot of the last element.
   private def baseName(name: String): String = name.split('/').lastOption.getOrElse("")
 
@@ -195,9 +195,9 @@ object ExtractedCount:
   extension (count: ExtractedCount) def value: Int = count
 
 /**
- * Why an archive could not be extracted. Each case carries the archive path because the Go messages name it
- * even though the caller's `extract <zip> to <staging>: ` prefix repeats it; that doubling is the reference
- * output and is kept.
+ * Why an archive could not be extracted. Each case carries the archive path even though the caller's
+ * `extract <zip> to <staging>: ` prefix already repeats it; that doubling is intentional and is part of
+ * the message this program emits.
  */
 enum ArchiveError:
   case Open(zip: os.Path, cause: String)

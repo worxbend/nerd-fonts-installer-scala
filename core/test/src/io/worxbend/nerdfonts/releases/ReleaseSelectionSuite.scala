@@ -27,20 +27,20 @@ object ReleaseSelectionSuite extends ZIOSpecDefault:
     test("a tag selects the release with that tag"):
       assertTrue(ReleaseSelection.select(releases, ReleaseSelector.Tagged(tag("v3.3.0"))) == Right(older))
     ,
-    test("an unknown tag is NotFound with the Go message"):
+    test("an unknown tag is NotFound with a message naming the tag"):
       val result = ReleaseSelection.select(releases, ReleaseSelector.Tagged(tag("v1.2.3")))
       assertTrue(
         result == Left(ReleaseError.NotFound(tag("v1.2.3"))),
         result.left.map(_.render) == Left("nerd fonts release \"v1.2.3\" was not found"),
       )
     ,
-    test("NoReleases renders the Go message and is distinct from NotFound"):
+    test("NoReleases renders its message and is distinct from NotFound"):
       assertTrue(
         ReleaseError.NoReleases.render == "no Nerd Fonts releases found",
         ReleaseError.NoReleases != ReleaseError.NotFound(tag("v1.0.0")),
       )
     ,
-    test("Http and Decode errors carry the Go prefixes"):
+    test("Http and Decode errors carry their prefixes"):
       assertTrue(
         ReleaseError.Http(HttpError.Transport("boom")).render == "list Nerd Fonts releases: boom",
         ReleaseError.Decode("unexpected EOF").render == "decode Nerd Fonts releases: unexpected EOF",

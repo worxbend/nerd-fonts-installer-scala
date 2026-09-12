@@ -9,14 +9,14 @@ import scala.annotation.tailrec
  * needs no configuration) and no silent tolerance of a mistyped flag.
  *
  * Long flags use the **double-dash** form only. A single-dash long flag such as `-config` or `-dry-run` is a
- * usage error rather than being accepted or ignored: Go's `flag` package took both spellings, but silently
- * dropping an unrecognised `-dry-run` would perform a **real installation** instead of the intended dry run, so
- * the parser fails loudly instead. Help is the one exception — `-h` and `-help` are accepted alongside
- * `--help`, because a misspelled help flag can never trigger a destructive action.
+ * usage error rather than being accepted or ignored: silently dropping an unrecognised `-dry-run` would
+ * perform a **real installation** instead of the intended dry run, so the parser fails loudly instead. Help
+ * is the one exception — `-h` and `-help` are accepted alongside `--help`, because a misspelled help flag can
+ * never trigger a destructive action.
  *
  * The argument vector is folded into an immutable [[CliOptions]] with no mutable state: repeated flags are
- * last-wins (Go's `flag` overwrites), and the first positional argument stops option parsing and is ignored
- * (Go stops at the first non-flag and leaves the rest to a caller that discards them).
+ * last-wins, and the first positional argument stops option parsing and is ignored (the remaining arguments
+ * are discarded).
  */
 private[cli] enum ParseResult:
   case Options(options: CliOptions)
@@ -30,7 +30,7 @@ private[cli] object ArgumentParser:
   @tailrec
   private def fold(args: List[String], options: CliOptions): ParseResult = args match
     case Nil           => ParseResult.Options(options)
-    // `--` is Go's flag terminator: everything after it is positional and ignored.
+    // `--` terminates option parsing: everything after it is positional and ignored.
     case "--" :: _     => ParseResult.Options(options)
     case token :: rest => step(token, rest, options) match
         case Step.Done(result)               => result
@@ -48,7 +48,7 @@ private[cli] object ArgumentParser:
       case "--config"     => inline match
           case Some(value) => Step.Continue(rest, options.copy(explicitConfig = Some(value)))
           case None        => rest match
-              // Go's `flag` takes the next argument verbatim, even one that looks like a flag; only a missing
+              // An option's value is taken verbatim, even one that looks like a flag; only a missing
               // trailing value is an error.
               case value :: tail => Step.Continue(tail, options.copy(explicitConfig = Some(value)))
               case Nil           => Step.Done(ParseResult.Usage(needsArgument(name)))
@@ -62,7 +62,7 @@ private[cli] object ArgumentParser:
         )
       case _              => Step.Done(ParseResult.Usage(notDefined(name)))
 
-  // A boolean flag never consumes the next argument (Go: `--flag` or `--flag=value`, never `--flag value`); an
+  // A boolean flag never consumes the next argument (`--flag` or `--flag=value`, never `--flag value`); an
   // inline value must parse, a bare flag means true.
   private def boolean(
       name: String,
@@ -82,7 +82,7 @@ private[cli] object ArgumentParser:
   // A token that does not start with `-`, or the bare `-`, is a positional argument.
   private def isPositional(token: String): Boolean = !token.startsWith("-") || token == "-"
 
-  // Go's `strconv.ParseBool`, the accepted set for a boolean flag value.
+  // The accepted set of boolean flag values.
   private def parseBoolean(raw: String): Option[Boolean] = raw match
     case "1" | "t" | "T" | "TRUE" | "true" | "True"    => Some(true)
     case "0" | "f" | "F" | "FALSE" | "false" | "False" => Some(false)

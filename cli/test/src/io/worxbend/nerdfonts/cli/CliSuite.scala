@@ -43,7 +43,7 @@ object CliSuite extends ZIOSpecDefault:
     (d, seen)
 
   override def spec: Spec[TestEnvironment, Any] = suite("Cli")(
-    test("--version prints the Go version line on stdout and exits 0"):
+    test("--version prints the version line on stdout and exits 0"):
       runCli(deps(), "--version").map(result =>
         assertTrue(
           result.code == 0,
@@ -62,7 +62,7 @@ object CliSuite extends ZIOSpecDefault:
         ),
       )
     ,
-    test("--help lists the options in Go's order with help last"):
+    test("--help lists the options in alphabetical order with help last"):
       runCli(deps(), "--help").map { result =>
         val out     = result.out
         val flags   = Vector("--config", "--dry-run", "--font-names", "--version", "--help")
@@ -214,7 +214,7 @@ object CliSuite extends ZIOSpecDefault:
         ),
       )
     ,
-    test("a repeated --config keeps the last value, as Go's flag package does"):
+    test("a repeated --config keeps the last value"):
       val seen = AtomicReference(Option.empty[os.Path])
       val d    = deps().copy(loadConfig = path => ZIO.succeed { seen.set(Some(path)); hackConfig })
       runCli(d, "--config", "a.yaml", "--config", "b.yaml").map(result =>

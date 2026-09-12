@@ -15,7 +15,7 @@ import zio.config.yaml.YamlConfigProvider
 
 /**
  * Turns a config file path into a validated `InstallConfig`: pick the format by extension, read the bytes,
- * hand them to the matching zio-config provider, apply the Go defaults and validate.
+ * hand them to the matching zio-config provider, apply the defaults and validate.
  *
  * This is the only place the steps meet, so the explicit `--config`, the environment variable and every
  * discovered candidate load by the same rules; discovery relies on `NotFound` staying distinguishable from

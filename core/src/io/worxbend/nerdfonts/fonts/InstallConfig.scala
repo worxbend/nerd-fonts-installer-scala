@@ -15,9 +15,9 @@ final case class InstallConfig(
 
 object InstallConfig:
   /**
-   * Applies the Go `Normalize` + `Validate` rules to raw (already defaulted) input, in the Go order: release,
-   * destination, empty family list, then each family in turn (unsafe before duplicate). The first failure
-   * wins, exactly as the reference reports one error at a time.
+   * Validates and normalises raw (already defaulted) input in a fixed order: release, destination, empty
+   * family list, then each family in turn (unsafe before duplicate). The first failure wins, so exactly
+   * one error is reported at a time.
    */
   def validated(
       release: String,
@@ -50,7 +50,7 @@ object InstallConfig:
       if accepted.contains(name) then Left(ConfigValidationError.DuplicateFamily(name))
       else Right(accepted :+ name)
 
-/** Why raw configuration input was rejected; renders the Go messages verbatim. */
+/** Why raw configuration input was rejected; each case renders its user-facing message verbatim. */
 enum ConfigValidationError:
   case ReleaseRequired
   case DestinationRequired
@@ -63,4 +63,4 @@ enum ConfigValidationError:
     case DestinationRequired   => "destination is required"
     case NoFamilies            => "at least one font family is required"
     case InvalidFamily(cause)  => cause.render
-    case DuplicateFamily(name) => s"duplicate font family ${GoQuote.quote(name.value)}"
+    case DuplicateFamily(name) => s"duplicate font family ${Quoting.quote(name.value)}"

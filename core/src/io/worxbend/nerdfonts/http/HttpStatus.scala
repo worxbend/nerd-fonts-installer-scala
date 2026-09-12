@@ -1,6 +1,6 @@
 package io.worxbend.nerdfonts.http
 
-/** The IANA status code registry, worded as Go's `http.StatusText` prints it. */
+/** The IANA status code registry, giving the reason phrase for each status code. */
 object HttpStatus:
   def reasonPhrase(code: Int): Option[String] = phrases.get(code)
 

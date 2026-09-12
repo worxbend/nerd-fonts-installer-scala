@@ -39,8 +39,8 @@ import zio.stream.ZStream
  * on the environment, so a run is reproducible from its `InstallRequest`. Everything it says goes through the
  * caller's `InstallEventSink`; everything that can fail comes back as an `InstallError`. Per-family paths are
  * disjoint (`<root>/<Family>`, its own staging directory, its own `.old`), which is what makes the fan-out
- * safe; the Go `errgroup` semantics — first failure cancels in-flight siblings, finished families stay
- * installed — are reproduced with `ZIO.foreachPar`, whose own first-failure-interrupts-the-rest behaviour
+ * safe; the concurrency semantics — first failure cancels in-flight siblings, finished families stay
+ * installed — come straight from `ZIO.foreachPar`, whose own first-failure-interrupts-the-rest behaviour
  * needs no extra signal of our own (§6.5).
  */
 final class FontInstaller(
@@ -91,7 +91,7 @@ final class FontInstaller(
     .mapError(error => InstallError.Destination(root, Diagnostics.describe(error)))
 
   // Verification is best-effort: an unavailable manifest is a warning and every family installs unverified;
-  // only a digest that is present and differs is fatal. `Truncate` keeps the first MiB like Go's LimitReader.
+  // only a digest that is present and differs is fatal. `Truncate` reads and keeps only the first MiB.
   private def fetchDigests(
       selector: ReleaseSelector,
       emit: InstallEvent => UIO[Unit],
@@ -289,7 +289,7 @@ object FontInstaller:
   /** Bounds one family's download plus extraction; composes with sibling cancellation instead of a global clock. */
   val defaultFamilyDeadline: FiniteDuration = 10.minutes
 
-  /** Stricter than Go's unbounded manifest fetch, acceptable because a manifest failure is only a warning. */
+  /** A deliberately strict bound, acceptable because a manifest failure is only a warning. */
   val defaultManifestTimeout: FiniteDuration = 30.seconds
 
   val tempZipPrefix: String = "nerd-font-"

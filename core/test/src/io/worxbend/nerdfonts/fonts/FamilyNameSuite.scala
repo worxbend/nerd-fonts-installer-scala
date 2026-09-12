@@ -9,10 +9,10 @@ object FamilyNameSuite extends ZIOSpecDefault:
     Vector(".", "..", "Hack/Regular", "Hack\\Regular", "/tmp/Hack", "../Hack", "Hack\u0000")
 
   def spec = suite("FamilyName")(
-    test("accepts every name in the Go acceptance table"):
+    test("accepts every name in the acceptance table"):
       assertTrue(safeNames.forall(name => FamilyName.parse(name).map(_.value) == Right(name)))
     ,
-    test("rejects every name in the Go rejection table as unsafe"):
+    test("rejects every name in the rejection table as unsafe"):
       assertTrue(unsafeNames.forall(name => FamilyName.parse(name) == Left(FamilyNameError.Unsafe(name))))
     ,
     test("rejects the empty name with its own error"):
@@ -24,10 +24,10 @@ object FamilyNameSuite extends ZIOSpecDefault:
     test("renders the empty-name message verbatim"):
       assertTrue(FamilyNameError.Empty.render == "font family names cannot be empty")
     ,
-    test("renders the unsafe-name message with Go quoting"):
+    test("renders the unsafe-name message with the name quoted"):
       assertTrue(FamilyNameError.Unsafe("../x").render == "unsafe font family name \"../x\"")
     ,
-    test("renders a NUL byte and a backslash escaped like Go's %q"):
+    test("renders a NUL byte and a backslash escaped"):
       assertTrue(
         FamilyNameError.Unsafe("Hack\u0000").render == "unsafe font family name \"Hack\\x00\"",
         FamilyNameError.Unsafe("Hack\\Regular").render == "unsafe font family name \"Hack\\\\Regular\"",

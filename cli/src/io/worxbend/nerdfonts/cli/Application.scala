@@ -21,7 +21,7 @@ import zio.UIO
 import zio.ZIO
 
 /**
- * The Go `run` after flag parsing: resolve a config (explicit → env → discovered), or print the font
+ * The application entry after flag parsing: resolve a config (explicit → env → discovered), or print the font
  * names, then install. Sees only `CliOptions` and `AppDependencies`, never the argument array, so every path
  * is a test on the returned `Either` value.
  *
@@ -104,7 +104,7 @@ object Application:
       _        <- ZIO.succeed(writeFontNames(release, out))
     yield AppOutcome.FontNamesPrinted
 
-  // `--font-names` borrows a discovered config's release but never announces the file, as the reference does.
+  // `--font-names` borrows a discovered config's release but never announces the file with `Using config`.
   private def configuredSelector(
       options: CliOptions,
       deps: AppDependencies,
@@ -112,7 +112,7 @@ object Application:
     case Some(raw) => loadExplicit(raw, deps).map(_.selector)
     case None      => discover(deps).map(_.fold(ReleaseSelector.Latest)(_.config.selector))
 
-  /** Go's `selectRelease`: an empty listing is `ErrNoReleases` whatever the selector asked for. */
+  /** An empty listing is `ErrNoReleases` whatever the selector asked for. */
   private[cli] def selectRelease(
       releases: Vector[Release],
       selector: ReleaseSelector,
@@ -135,7 +135,7 @@ object Application:
         case Some(found) => ZIO.succeed(err.println(s"Using config ${found.path}")).as(found.config)
         case None        => deps.configCandidates().flatMap(c => ZIO.fail(AppFailure.NoConfig(c)))
 
-  // The flag wins over the variable; a blank variable falls through to discovery (Go `effectiveConfigPath`).
+  // The flag wins over the variable; a blank variable falls through to discovery.
   private def explicitPath(options: CliOptions, env: Environment): UIO[Option[String]] =
     options.explicitConfig match
       case some @ Some(_) => ZIO.succeed(some)
@@ -147,9 +147,9 @@ object Application:
   // The loader needs an absolute path while the message keeps the raw text (`AppFailure.renderAsTyped`
   // substitutes it back in). An absolute path needs no working directory, so its absence only fails a relative
   // one. Anything argv or an environment variable can carry is a well-formed POSIX path (no NUL), so `Path.of`
-  // cannot throw here. `--config ""` resolves to the working directory itself, which Go never opens (it hands
-  // the empty string straight to `os.ReadFile` and gets `no such file or directory`); reporting `NotFound`
-  // directly avoids reading the cwd as a file and getting a different error shape (`Is a directory`).
+  // cannot throw here. `--config ""` resolves to the working directory itself, which must not be opened as a
+  // file: reporting `NotFound` directly gives the expected `no such file or directory` and avoids reading the
+  // cwd as a file and getting a different error shape (`Is a directory`).
   private def resolvePath(raw: String, env: Environment): IO[ConfigError, os.Path] =
     val path = Path.of(raw)
     if path.isAbsolute then ZIO.succeed(os.Path(path.normalize()))
@@ -174,9 +174,9 @@ object Application:
     for
       root   <- deps.expandDestination(config.destination).mapError(AppFailure.Destination(_))
       request = InstallRequest(config.selector, root, config.families, config.refreshFontCache, dryRun)
-      // From here on a SIGINT is Go's `install fonts: … context canceled`; the phase flip is what
+      // From here on a SIGINT is reported under the `install fonts: ` prefix; the phase flip is what
       // `Application.run` reads to add the prefix. Destination expansion above is instantaneous and still
-      // counts as "before install", exactly as the Go reference wraps only the engine call.
+      // counts as "before install", so only the engine call itself is treated as the install phase.
       _      <- phase.set(InterruptPhase.Install)
       _      <- deps
                   .installFonts(request, ConsoleEventRenderer(out, err, deps.colours))

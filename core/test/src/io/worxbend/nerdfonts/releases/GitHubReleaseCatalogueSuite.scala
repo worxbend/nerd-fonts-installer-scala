@@ -20,7 +20,7 @@ import zio.test.TestEnvironment
 import zio.test.ZIOSpecDefault
 import zio.test.assertTrue
 
-/** Every scenario of the Go `releases_test.go`, plus the deadline and page cap the Scala port adds. */
+/** The release-listing scenarios, including the request deadline and the page cap. */
 object GitHubReleaseCatalogueSuite extends ZIOSpecDefault:
   private val base = Url("https://api.test/releases")
 
@@ -110,7 +110,7 @@ object GitHubReleaseCatalogueSuite extends ZIOSpecDefault:
         )
       }
     ,
-    test("malformed JSON is a Decode error with the Go prefix"):
+    test("malformed JSON is a Decode error with the decode prefix"):
       val http = InMemoryHttpClient(Map(page(1) -> Response.ok("[")))
       catalogue(http, maxPages = 1).releases().either.map { result =>
         assertTrue(
@@ -125,7 +125,7 @@ object GitHubReleaseCatalogueSuite extends ZIOSpecDefault:
         assertTrue(result == Left(ReleaseError.Decode("expected a JSON array of releases")))
       }
     ,
-    test("a field of the wrong type is a Decode error, as with Go's strict decoder"):
+    test("a field of the wrong type is a Decode error under strict decoding"):
       val http = InMemoryHttpClient(Map(page(1) -> Response.ok("""[{"tag_name": 42}]""")))
       catalogue(http, maxPages = 1).releases().either.map { result =>
         assertTrue(result == Left(ReleaseError.Decode("field tag_name: expected a string")))
@@ -195,7 +195,7 @@ object GitHubReleaseCatalogueSuite extends ZIOSpecDefault:
         Vector("JetBrainsMono.zip", "README.md", "Hack.ZIP", "JetBrainsMono.zip", "SymbolsOnly.tar.xz")
       assertTrue(ReleasePageDecoder.familiesFromAssets(assets) == Vector("Hack", "JetBrainsMono"))
     ,
-    test("page URLs append to an existing query string like Go's url.Values"):
+    test("page URLs append to an existing query string"):
       val url = GitHubReleaseCatalogue.pageUrl(Url("https://example.test/releases?existing=1"), 3)
       assertTrue(url == Url("https://example.test/releases?existing=1&page=3&per_page=100"))
     ,
@@ -209,6 +209,6 @@ object GitHubReleaseCatalogueSuite extends ZIOSpecDefault:
         GitHubReleaseCatalogue.defaultPageTimeout == 30.seconds,
       )
     ,
-    test("the latest keyword shared with the Go reference is `latest`"):
+    test("the latest keyword is `latest`"):
       assertTrue(ReleaseSelector.latestKeyword == "latest"),
   ) @@ TestAspect.withLiveClock

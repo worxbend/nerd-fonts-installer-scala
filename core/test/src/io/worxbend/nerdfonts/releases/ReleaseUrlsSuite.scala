@@ -8,7 +8,10 @@ import io.worxbend.nerdfonts.http.Url
 import zio.test.ZIOSpecDefault
 import zio.test.assertTrue
 
-/** The Go `TestReleaseURL` / `TestChecksumURL*` tables, plus the `url.PathEscape` character classes. */
+/**
+ * URL construction for release downloads and checksum manifests, plus the percent-escape character
+ * classes.
+ */
 object ReleaseUrlsSuite extends ZIOSpecDefault:
   private def family(name: String): FamilyName = FamilyName.parse(name) match
     case Right(value) => value
@@ -67,10 +70,10 @@ object ReleaseUrlsSuite extends ZIOSpecDefault:
         urls.checksums(tagged("v3.4.0")) == Url("http://127.0.0.1:8080/download/v3.4.0/SHA-256.txt"),
       )
     ,
-    test("PathEscape leaves unreserved characters and Go's kept delimiters alone"):
+    test("PathEscape leaves unreserved characters and the kept delimiters alone"):
       assertTrue(PathEscape.escape("AZaz09-_.~$&+:=@") == "AZaz09-_.~$&+:=@")
     ,
-    test("PathEscape encodes the segment delimiters Go encodes"):
+    test("PathEscape encodes the segment delimiters"):
       assertTrue(PathEscape.escape("a/b;c,d?e") == "a%2Fb%3Bc%2Cd%3Fe")
     ,
     test("PathEscape encodes spaces, asterisks and quotes with uppercase hex"):

@@ -67,7 +67,7 @@ object ConfigLocationsSuite extends ZIOSpecDefault:
         .candidates(env(Map("XDG_CONFIG_HOME" -> cwd.toString)))
         .map(candidates => assertTrue(candidates == shapes(cwd), candidates.size == 10))
     ,
-    test("fails with the Go prefix when the working directory cannot be determined"):
+    test("fails with the locate-directory prefix when the working directory cannot be determined"):
       val gone = EnvironmentError.NoWorkingDirectory("getwd: no such file or directory")
       ConfigLocations
         .candidates(env(cwd = Left(gone)))

@@ -12,8 +12,8 @@ import zio.config.magnolia.deriveConfig
  * zio-config's magnolia derivation maps Scala field names to keys with no transform, so the snake_case key
  * `refresh_font_cache` is bound explicitly with `@name`; the other three keys are single words that already
  * match a Scala identifier. A global `.snakeCase` transform is deliberately avoided — it would rewrite the
- * three single-word keys too. The DTO is mapped to [[ConfigDocument]] so the Go `ApplyDefaults` + `Normalize`
- * + `Validate` sequence lives in exactly one place, independent of the file format that produced it.
+ * three single-word keys too. The DTO is mapped to [[ConfigDocument]] so the defaulting, normalising and
+ * validating sequence lives in exactly one place, independent of the file format that produced it.
  */
 final private[config] case class ConfigDto(
     release: Option[String],

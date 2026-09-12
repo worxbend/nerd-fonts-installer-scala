@@ -31,7 +31,7 @@ import zio.UIO
 import zio.ZIO
 
 /**
- * The seams between `Application` and the world, as plain functions (the Go `dependencies` struct).
+ * The seams between `Application` and the world, as plain functions.
  *
  * Function-typed rather than port traits because each is used at exactly one call site and tests want to
  * replace one at a time with a lambda. The effectful seams are `ZIO` effects with the typed errors of the

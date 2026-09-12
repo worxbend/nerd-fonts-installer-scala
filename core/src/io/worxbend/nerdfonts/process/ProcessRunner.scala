@@ -10,12 +10,12 @@ import zio.UIO
 trait ProcessRunner:
   def run(spec: ProcessSpec): IO[ProcessError, ProcessResult]
 
-  /** Go's `exec.LookPath`: where `name` would resolve on `PATH`, or `None` when it is not installed. */
+  /** Where `name` would resolve on `PATH`, or `None` when it is not installed. */
   def lookPath(name: String): UIO[Option[os.Path]]
 
 /**
  * What to run and how its three streams are wired. The defaults inherit the parent's streams, which is
- * what lets `fc-cache` print straight to the user's terminal exactly as it does under Go's `exec.Command`.
+ * what lets `fc-cache` print straight to the user's terminal.
  */
 final case class ProcessSpec(
     command: Vector[String],
@@ -42,7 +42,7 @@ enum Stderr:
 /** How a finished child ended; `stdout` is empty unless the spec asked to capture it. */
 final case class ProcessResult(exit: ExitStatus, stdout: String)
 
-/** A child's exit code, with Go's `exit status N` wording for messages. */
+/** A child's exit code, rendered as `exit status N` in messages. */
 opaque type ExitStatus = Int
 
 object ExitStatus:

@@ -5,7 +5,7 @@ import io.worxbend.nerdfonts.releases.ReleaseError
 /**
  * The one place an application result becomes a POSIX exit status.
  *
- * Mirrors Go's `exitCodeFor`: only the user-correctable failures (no config, an unknown release tag, no
+ * The classification rule: only the user-correctable failures (no config, an unknown release tag, no
  * releases at all) are 2; everything else that went wrong, including a config file that exists but cannot be
  * loaded, is 1. A malformed or unknown flag is a `2` produced by the hand-rolled parser (SPEC §7), and
  * `--help`/`--version` are a `0` produced there too; those are the only codes not routed through here.

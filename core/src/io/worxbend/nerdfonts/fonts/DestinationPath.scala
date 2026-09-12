@@ -10,7 +10,7 @@ package io.worxbend.nerdfonts.fonts
 opaque type DestinationPath = String
 
 object DestinationPath:
-  /** The Go default, shared by config decoding and install request construction. */
+  /** The default install root, shared by config decoding and install request construction. */
   val default: DestinationPath = "~/.local/share/fonts/NerdFonts"
 
   /** Trims the input and rejects a blank result. */

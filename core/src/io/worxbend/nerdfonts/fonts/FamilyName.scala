@@ -12,8 +12,9 @@ opaque type FamilyName = String
 
 object FamilyName:
   /**
-   * Validates a raw name with exactly the rules of the Go reference. The input is not trimmed: callers that
-   * accept whitespace-padded input (the config loader) trim before parsing, as the Go loader does.
+   * Validates a raw name. The input is deliberately not trimmed: callers that accept whitespace-padded
+   * input (the config loader) trim before parsing, so that trimming is a decision each caller makes
+   * explicitly rather than one hidden in the validator.
    */
   def parse(raw: String): Either[FamilyNameError, FamilyName] =
     if raw.isEmpty then Left(FamilyNameError.Empty)
@@ -21,7 +22,7 @@ object FamilyName:
     else Right(raw)
 
   // Absolute paths and names whose base name differs from themselves are implied by the separator check on
-  // POSIX, but each Go rule is kept explicit so the guard reads as the security argument it is.
+  // POSIX, but each rule is kept explicit so the guard reads as the security argument it is.
   private def isUnsafe(raw: String): Boolean = raw == "." || raw == ".." ||
     raw.exists(c => c == '/' || c == '\\' || c == '\u0000') ||
     raw.startsWith("/") ||
@@ -35,11 +36,11 @@ object FamilyName:
     /** The validated text, for building paths, URLs and messages. */
     def value: String = name
 
-/** Why a raw family name was rejected; renders the Go messages verbatim. */
+/** Why a raw family name was rejected; each case renders its user-facing message verbatim. */
 enum FamilyNameError:
   case Empty
   case Unsafe(name: String)
 
   def render: String = this match
     case Empty        => "font family names cannot be empty"
-    case Unsafe(name) => s"unsafe font family name ${GoQuote.quote(name)}"
+    case Unsafe(name) => s"unsafe font family name ${Quoting.quote(name)}"

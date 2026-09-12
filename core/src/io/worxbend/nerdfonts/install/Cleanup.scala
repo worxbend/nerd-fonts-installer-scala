@@ -4,7 +4,7 @@ import zio.UIO
 import zio.ZIO
 
 /**
- * Best-effort removal of the engine's own scratch files, matching Go's `_ = os.Remove(...)`.
+ * Best-effort removal of the engine's own scratch files; the outcome is deliberately ignored.
  *
  * These run after the commit point of a swap and in cleanup paths, where a failure must neither mask the
  * real error nor turn a completed install into a reported one; a leftover is harmless and is cleared by the

@@ -18,11 +18,11 @@ import zio.json.*
 import zio.json.ast.Json
 
 /**
- * The GitHub releases API as a [[ReleaseCatalogue]], paginated exactly like the Go client.
+ * The GitHub releases API as a [[ReleaseCatalogue]], fetched one page at a time.
  *
  * Pagination stops when a raw page is empty, not when filtering emptied it: a page of only drafts or
  * asset-less releases must not hide usable releases further on. Each page has one overall deadline
- * covering connect, headers, body and decode, which is Go's `http.Client{Timeout: 30s}`; the port itself
+ * covering connect, headers, body and decode — a single 30s budget per page; the port itself
  * only bounds connect and read separately. The page body is capped so a hostile or broken API cannot make
  * the process buffer without bound.
  */
@@ -76,10 +76,10 @@ object GitHubReleaseCatalogue:
 final private[releases] case class ReleasePage(rawCount: Int, releases: Vector[Release])
 
 /**
- * Decodes one page of the releases API with the Go filtering rules: drop drafts and blank tags, keep only
- * `.zip` assets as families (sorted, unique, extension stripped), drop releases with no families, and fall
- * back to the tag when the name is blank. Field type mismatches are decode errors, as with Go's strict
- * `encoding/json`.
+ * Decodes one page of the releases API with a fixed set of filtering rules: drop drafts and blank tags,
+ * keep only `.zip` assets as families (sorted, unique, extension stripped), drop releases with no
+ * families, and fall back to the tag when the name is blank. Field type mismatches are decode errors:
+ * decoding is strict.
  */
 private[releases] object ReleasePageDecoder:
   private val zipSuffix = ".zip"

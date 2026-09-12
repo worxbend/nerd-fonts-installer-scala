@@ -1,6 +1,6 @@
 package io.worxbend.nerdfonts.releases
 
-import io.worxbend.nerdfonts.fonts.GoQuote
+import io.worxbend.nerdfonts.fonts.Quoting
 import io.worxbend.nerdfonts.fonts.ReleaseTag
 import io.worxbend.nerdfonts.http.HttpError
 
@@ -14,9 +14,9 @@ enum ReleaseError:
   case Http(cause: HttpError)
   case Decode(message: String)
 
-  /** The Go wording, prefixes included. */
+  /** The user-facing wording, prefixes included. */
   def render: String = this match
     case NoReleases      => "no Nerd Fonts releases found"
-    case NotFound(tag)   => s"nerd fonts release ${GoQuote.quote(tag.value)} was not found"
+    case NotFound(tag)   => s"nerd fonts release ${Quoting.quote(tag.value)} was not found"
     case Http(cause)     => s"list Nerd Fonts releases: ${cause.render}"
     case Decode(message) => s"decode Nerd Fonts releases: $message"

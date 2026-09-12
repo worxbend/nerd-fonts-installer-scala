@@ -31,13 +31,13 @@ object InstallConfigSuite extends ZIOSpecDefault:
         config.map(_.families.map(_.value)) == Right(Vector("Hack")),
       )
     ,
-    test("rejects a blank release with the Go message"):
+    test("rejects a blank release with a message naming the field"):
       assertTrue(validated(release = "  ").left.map(_.render) == Left("release is required"))
     ,
-    test("rejects a blank destination with the Go message"):
+    test("rejects a blank destination with a message naming the field"):
       assertTrue(validated(destination = "").left.map(_.render) == Left("destination is required"))
     ,
-    test("rejects an empty family list with the Go message"):
+    test("rejects an empty family list with a message requiring at least one family"):
       assertTrue(
         validated(families = Vector.empty).left.map(_.render) == Left("at least one font family is required"),
       )
@@ -53,7 +53,7 @@ object InstallConfigSuite extends ZIOSpecDefault:
         validated(families = Vector("  ")).left.map(_.render) == Left("font family names cannot be empty"),
       )
     ,
-    test("rejects a duplicate family with the Go message, comparing after trimming"):
+    test("rejects a duplicate family with a message, comparing after trimming"):
       assertTrue(
         validated(families = Vector("Hack", " Hack ")).left.map(_.render) ==
           Left("duplicate font family \"Hack\""),

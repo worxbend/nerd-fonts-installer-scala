@@ -12,7 +12,7 @@ import zio.test.TestEnvironment
 import zio.test.ZIOSpecDefault
 import zio.test.assertTrue
 
-/** Go's `exitCodeFor`, case by case. */
+/** The exit-code mapping, case by case. */
 object ExitCodeSuite extends ZIOSpecDefault:
   private val otherFailures = Vector(
     AppFailure.Config(ConfigError.NotFound(cwd / "x.yaml"), "x.yaml"),

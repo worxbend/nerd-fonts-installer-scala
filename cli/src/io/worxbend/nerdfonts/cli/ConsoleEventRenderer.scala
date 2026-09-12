@@ -8,7 +8,7 @@ import io.worxbend.nerdfonts.install.InstallEventSink
 import java.io.PrintWriter
 
 /**
- * The only place install events become text: Go-parity wording, the glyph prefixes, and the stdout/stderr
+ * The only place install events become text: the message wording, the glyph prefixes, and the stdout/stderr
  * split (the dry-run plan is machine-readable and goes to stdout; progress and warnings go to stderr).
  *
  * The `match` is exhaustive without a wildcard so a new event cannot ship unrendered. There is no locking:
@@ -52,7 +52,7 @@ final class ConsoleEventRenderer(out: PrintWriter, err: PrintWriter, colours: Co
       case ColourMode.Plain => safe
 
 object ConsoleEventRenderer:
-  /** The lipgloss 256-colour numbers of the Go installer, one attribute set per role. */
+  /** The 256-colour numbers, one attribute set per role. */
   private[cli] val spinner: fansi.Attrs = fansi.Color.Full(63)
   private[cli] val success: fansi.Attrs = fansi.Bold.On ++ fansi.Color.Full(42)
   private[cli] val warning: fansi.Attrs = fansi.Color.Full(214)

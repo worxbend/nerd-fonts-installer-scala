@@ -51,7 +51,7 @@ object PathExpanderSuite extends ZIOSpecDefault:
     test("a relative path resolves against the working directory"):
       expand("fonts").either.map(result => assertTrue(result == Right(cwd / "fonts")))
     ,
-    test("a relative path without a working directory fails with the Go prefix"):
+    test("a relative path without a working directory fails with the locate-directory prefix"):
       val noCwd = Environment.fixed(workingDirectory = Left(EnvironmentError.NoWorkingDirectory("gone")))
       expand("fonts", noCwd).either.map(result =>
         assertTrue(result.left.map(_.render) == Left("locate current directory: gone")),

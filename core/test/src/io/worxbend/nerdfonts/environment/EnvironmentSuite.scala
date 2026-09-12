@@ -45,7 +45,7 @@ object EnvironmentSuite extends ZIOSpecDefault:
     test("$HOME unset means no home, with no fallback to the JVM's user.home"):
       assertTrue(Environment.homeFrom(None) == None)
     ,
-    test("a blank $HOME means no home, exactly like Go's os.UserHomeDir"):
+    test("a blank $HOME means no home"):
       assertTrue(Environment.homeFrom(Some("")) == None)
     ,
     test("a non-blank $HOME resolves to that path"):

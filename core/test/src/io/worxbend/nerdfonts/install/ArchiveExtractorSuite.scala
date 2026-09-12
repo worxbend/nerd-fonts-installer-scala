@@ -10,7 +10,7 @@ import zio.test.TestEnvironment
 import zio.test.ZIOSpecDefault
 import zio.test.assertTrue
 
-/** The Go `ExtractFontZip` scenarios plus the streaming cases a `ZipInputStream` port adds. */
+/** The font-zip extraction scenarios, including the streaming cases the `ZipInputStream` reader adds. */
 object ArchiveExtractorSuite extends ZIOSpecDefault:
   private def withTempDir[A](test: os.Path => Task[A]): Task[A] = ZIO.acquireReleaseWith(
     ZIO.attemptBlockingIO(os.temp.dir(prefix = "archive-extractor")),

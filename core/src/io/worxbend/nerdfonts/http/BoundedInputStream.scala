@@ -6,8 +6,8 @@ import java.io.InputStream
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * Caps how many bytes can be read from an underlying stream, the same way Go's `io.LimitReader(body, max+1)`
- * backstops a missing or dishonest `Content-Length`.
+ * Caps how many bytes can be read from an underlying stream, backstopping a missing or dishonest
+ * `Content-Length`.
  *
  * In `Overflow.Reject` mode the cap is `limit + 1`: reading one byte past the limit is allowed precisely so
  * that [[exceeded]] can tell "exactly at the limit" from "over it" without buffering anything. In

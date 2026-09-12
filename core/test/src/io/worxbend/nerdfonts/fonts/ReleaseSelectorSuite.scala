@@ -11,7 +11,7 @@ object ReleaseSelectorSuite extends ZIOSpecDefault:
     test("the latest keyword selects the latest release even when padded"):
       assertTrue(ReleaseSelector.parse(" latest ") == ReleaseSelector.Latest)
     ,
-    test("the keyword is case-sensitive, as in Go"):
+    test("the keyword is case-sensitive"):
       assertTrue(ReleaseSelector.parse("Latest").render == "Latest")
     ,
     test("anything else is a trimmed tag"):

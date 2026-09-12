@@ -13,14 +13,14 @@ import zio.UIO
  * `nerd-fonts-installer.<ext>` files before the `nerd-fonts-installer/config.<ext>` directory shape.
  *
  * The same list feeds discovery and the "no config found" hint, so the hint never names a place discovery does
- * not search. A missing home silently drops the config-home half (Go: `os.UserHomeDir` failure is ignored);
+ * not search. A missing home directory silently drops the config-home half rather than failing discovery;
  * a missing working directory is an error, because the first half cannot be built without it.
  */
 object ConfigLocations:
   /** The base name every candidate is derived from; also the directory name of the second shape. */
   val appName: String = "nerd-fonts-installer"
 
-  /** Extensions in the Go order plus `hocon`; `.conf` and `.hocon` are decoded as HOCON. */
+  /** Extensions in probe order; `.conf` and `.hocon` are decoded as HOCON. */
   val extensions: Vector[String] = Vector("yaml", "yml", "json", "conf", "hocon")
 
   /** The variable that names an explicit config file, checked by the CLI between `--config` and discovery. */
@@ -44,8 +44,8 @@ object ConfigLocations:
       home <- env.homeDirectory
     yield xdg.orElse(home.map(_ / ".config"))
 
-  // Go accepts `$XDG_CONFIG_HOME` only when `filepath.IsAbs` holds; a relative or unset value falls back to
-  // `~/.config` rather than being resolved against the working directory.
+  // `$XDG_CONFIG_HOME` is honoured only when it is absolute; a relative or unset value is ignored and falls
+  // back to `~/.config` rather than being resolved against the working directory.
   private def absoluteXdgConfigHome(env: Environment): UIO[Option[os.Path]] = env
     .variable(xdgConfigHomeVariable)
     .map(_.filter(_.startsWith("/")).flatMap(raw => Try(os.Path(raw)).toOption))

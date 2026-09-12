@@ -24,5 +24,5 @@ object ByteLimit:
     /** Whether a byte count (a `Content-Length`, a declared entry size, a running total) breaks the cap. */
     def exceededBy(count: Long): Boolean = count > limit
 
-    /** The plain number, which is how the Go messages print a limit (`exceeds 805306368 byte limit`). */
+    /** The plain number, as it appears in messages (`exceeds 805306368 byte limit`). */
     def render: String = limit.toString

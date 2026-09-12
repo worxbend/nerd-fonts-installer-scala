@@ -7,8 +7,8 @@ import io.worxbend.nerdfonts.fonts.FamilyName
  *
  * Only `.zip` entries matter, and only those whose stem is a valid `FamilyName`: a stem that fails to parse
  * could never match a validated family, so skipping it loses nothing. Malformed lines, including a last
- * line cut by the 1 MiB read limit, are skipped the same way. A later line for the same family wins, as
- * with Go's map assignment.
+ * line cut by the 1 MiB read limit, are skipped the same way. A later line for the same family wins, the
+ * last assignment into the map taking precedence.
  */
 object ChecksumManifest:
   private val zipSuffix = ".zip"

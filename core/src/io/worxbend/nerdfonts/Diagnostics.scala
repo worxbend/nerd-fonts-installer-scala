@@ -14,9 +14,10 @@ import java.nio.file.NotDirectoryException
  * `java.nio.file.FileSystemException` is special-cased: the JDK's Unix implementation builds
  * `AccessDeniedException`, `NoSuchFileException` and `FileAlreadyExistsException` with a `null` reason, so
  * `getMessage` on the plain path is `Some(<path>)` — not empty, so the fallback below never triggers, but
- * useless (`create destination /root/fonts: /root/fonts`). Go wraps the OS error and gets `permission denied`
- * / `no such file or directory` / `file exists`; `getReason` carries exactly that text when the JDK does set
- * it (a case this fallback also covers), so it is preferred over guessing from the exception's class.
+ * useless (`create destination /root/fonts: /root/fonts`). The reason we actually want is `permission
+ * denied` / `no such file or directory` / `file exists`; `getReason` carries exactly that text when the
+ * JDK does set it (a case this fallback also covers), so it is preferred over guessing from the
+ * exception's class.
  */
 private[nerdfonts] object Diagnostics:
   def describe(error: Throwable): String = error match

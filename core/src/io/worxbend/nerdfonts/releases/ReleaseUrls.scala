@@ -23,9 +23,9 @@ object DownloadUrl:
     def value: String = url
 
 /**
- * Builds the release asset URLs below one `releases` base. Both segments are escaped with Go's
- * `url.PathEscape` semantics so the tool requests byte-for-byte the same URLs as the reference for tags and
- * families containing spaces.
+ * Builds the release asset URLs below one `releases` base. Both segments are percent-escaped with
+ * path-segment semantics (see [[PathEscape]]) so tags and families containing spaces produce valid,
+ * correctly encoded URLs.
  *
  * The base is a value rather than a constant so the composition root can point a whole run at a local stub
  * (the CI interrupt smoke test); every production path uses [[ReleaseUrls.github]].
@@ -50,9 +50,9 @@ object ReleaseUrls:
   def apply(base: Url): ReleaseUrls = new ReleaseUrls(Url(base.value.stripSuffix("/")))
 
 /**
- * Go's `url.PathEscape`: percent-encodes everything in a path segment except RFC 3986 unreserved characters
- * and the sub-delimiters Go leaves alone (`$&+:=@`). Java's `URLEncoder` encodes a space as `+` and leaves
- * `*` alone, so it cannot be used here.
+ * Percent-encodes a path segment the way RFC 3986 requires: everything except the unreserved characters
+ * and the sub-delimiters that are legal unencoded in a path segment (`$&+:=@`) is escaped. Java's
+ * `URLEncoder` encodes a space as `+` and leaves `*` alone, so it cannot be used here.
  */
 private[releases] object PathEscape:
   private val hex = "0123456789ABCDEF"

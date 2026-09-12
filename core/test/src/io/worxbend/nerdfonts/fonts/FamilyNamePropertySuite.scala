@@ -6,8 +6,8 @@ import zio.test.assertTrue
 import zio.test.check
 
 /**
- * The Go fuzz target `FuzzValidate`, as a property: anything `FamilyName` accepts is a benign single path
- * component. This is the invariant the filesystem and URL code rely on.
+ * A property: anything `FamilyName` accepts is a benign single path component. This is the invariant the
+ * filesystem and URL code rely on.
  */
 object FamilyNamePropertySuite extends ZIOSpecDefault:
   // Arbitrary strings rarely contain the interesting bytes, so half the inputs are drawn from a hazardous

@@ -9,14 +9,14 @@ import scala.concurrent.duration.FiniteDuration
 
 /**
  * Why a run failed. Exactly one of these is ever reported: the fan-out stops at the first failing family,
- * so the CLI prints a single `install fonts: <render>` line, as the Go reference does.
+ * so the CLI prints a single `install fonts: <render>` line.
  */
 enum InstallError:
   case Destination(root: os.Path, cause: String)
   case Family(name: FamilyName, cause: FamilyInstallError)
   case FontCache(root: os.Path, cause: FontCacheError)
 
-  /** The Go wording without the `install fonts: ` prefix, which the CLI adds. */
+  /** The message text without the `install fonts: ` prefix, which the CLI adds. */
   def render: String = this match
     case Destination(root, cause) => s"create destination $root: $cause"
     case Family(name, cause)      => s"install Nerd Font family ${name.value}: ${cause.render(name)}"

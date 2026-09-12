@@ -75,7 +75,7 @@ object DirectorySwap:
   private enum Previous:
     case MovedAside, Absent
 
-/** Why the swap failed; every case names both paths as the Go messages do. */
+/** Why the swap failed; every case names both paths in its message. */
 enum SwapError:
   case RemoveBackup(backup: os.Path, cause: String)
   case MoveAside(target: os.Path, backup: os.Path, cause: String)

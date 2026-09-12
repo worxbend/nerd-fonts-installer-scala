@@ -61,7 +61,7 @@ object ConsoleEventRendererSuite extends ZIOSpecDefault:
     out.toString + err.toString
 
   override def spec: Spec[TestEnvironment, Any] = suite("ConsoleEventRenderer")(
-    test("plain mode prints the Go wording with glyphs and routes plan lines to stdout"):
+    test("plain mode prints the wording with glyphs and routes plan lines to stdout"):
       assertTrue(render(ColourMode.Plain) == (plainOut, plainErr))
     ,
     test("plain output contains no escape sequences"):
@@ -72,7 +72,7 @@ object ConsoleEventRendererSuite extends ZIOSpecDefault:
       val (out, err) = render(ColourMode.Ansi)
       assertTrue((stripAnsi(out), stripAnsi(err)) == (plainOut, plainErr))
     ,
-    test("ansi mode paints each role with its lipgloss colour"):
+    test("ansi mode paints each role with its colour"):
       val (out, err) = render(ColourMode.Ansi)
       val text       = out + err
       assertTrue(

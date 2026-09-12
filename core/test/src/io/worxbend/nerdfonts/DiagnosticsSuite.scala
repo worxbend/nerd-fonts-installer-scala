@@ -11,10 +11,10 @@ import zio.test.ZIOSpecDefault
 import zio.test.assertTrue
 
 /**
- * The JDK's Unix `FileSystemException`s carry no reason (`getMessage` is just the path), unlike Go's wrapped
- * OS errors (`permission denied`, `no such file or directory`, `file exists`); every case here is
- * constructed directly, without touching the real filesystem, so the test does not depend on the user
- * running it being unprivileged.
+ * The JDK's Unix `FileSystemException`s carry no reason (`getMessage` is just the path), so `Diagnostics`
+ * supplies the reason (`permission denied`, `no such file or directory`, `file exists`) itself; every case
+ * here is constructed directly, without touching the real filesystem, so the test does not depend on the
+ * user running it being unprivileged.
  */
 object DiagnosticsSuite extends ZIOSpecDefault:
   def spec = suite("Diagnostics")(

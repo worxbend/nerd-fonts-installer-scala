@@ -20,8 +20,8 @@ import zio.ZIO
  *
  * `PATH` is read through the `Environment` port rather than `sys.env` so lookups are testable and so the
  * "not installed" case is decided before the JDK turns it into an opaque `IOException`. On interruption the
- * child is destroyed and reaped, bounded, before the interruption completes, which is what Go's
- * `exec.CommandContext` does when the root context is cancelled.
+ * child is destroyed and reaped, with a bounded wait, before the interruption completes, so an
+ * interrupted run never leaves a live subprocess behind.
  */
 final class JdkProcessRunner(env: Environment) extends ProcessRunner:
   // The resolved path is used as argv[0] (`builder`) rather than the bare program name, so `ProcessBuilder`
@@ -111,10 +111,11 @@ final class JdkProcessRunner(env: Environment) extends ProcessRunner:
             .orDie
             .unit).uninterruptible
 
-  // Go (since 1.19, `exec.ErrDot`) refuses to run a binary that a `PATH` search resolved relative to the
-  // current directory; an empty entry is exactly that case (`.` to a shell), and so is a bare relative entry
-  // (`sub/dir`). Only absolute entries are searched, so a leading/trailing `:` or a `.` on `PATH` can never
-  // make this resolve `fc-cache` or `stty` to a binary the user did not put there.
+  // A `PATH` search must never resolve a binary relative to the current directory: the resolved binary
+  // would then depend on the working directory and be trivially hijackable. An empty entry is exactly that
+  // case (`.` to a shell), and so is a bare relative entry (`sub/dir`). Only absolute entries are searched,
+  // so a leading/trailing `:` or a `.` on `PATH` can never make this resolve `fc-cache` or `stty` to a
+  // binary the user did not put there.
   private def searchPath: UIO[Vector[os.Path]] = env
     .variable("PATH")
     .map(
@@ -124,9 +125,9 @@ final class JdkProcessRunner(env: Environment) extends ProcessRunner:
         .flatMap(entry => Try(os.Path(entry)).toOption),
     )
 
-  // A name containing a slash is used directly, exactly as Go's `exec.LookPath` does: no `PATH` search, so
-  // `ErrDot` does not apply, and a relative name resolves against the working directory because the caller
-  // named that path explicitly rather than PATH resolving into it by surprise.
+  // A name containing a slash is used directly: no `PATH` search, so the relative-resolution guard above
+  // does not apply, and a relative name resolves against the working directory because the caller named
+  // that path explicitly rather than PATH resolving into it by surprise.
   private def resolveDirect(name: String): UIO[Option[os.Path]] =
     if name.startsWith("/") then ZIO.succeed(Try(os.Path(name)).toOption)
     else env.workingDirectory.option.map(_.flatMap(cwd => Try(os.Path(name, cwd)).toOption))

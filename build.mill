@@ -133,8 +133,7 @@ object app extends NerdFontsModule, NativeImageModule:
     "-O2",
     // GraalVM 25's AMD64 default is `x86-64-v3` (AVX2/BMI2), which aborts at startup on a pre-2013 CPU or a
     // default-model VM/container; `compatibility` is native-image's baseline-features setting on every
-    // architecture (already AArch64's default, so arm64 builds are unaffected) and matches the Go reference's
-    // `GOAMD64=v1`.
+    // architecture (already AArch64's default, so arm64 builds are unaffected).
     "-march=compatibility",
     "--initialize-at-build-time=scala",
     // zio-http runs on Netty, which must not be initialised into the image heap.

@@ -126,7 +126,7 @@ object InstallErrorSuite extends ZIOSpecDefault:
           "move extracted fonts /fonts/.Hack-456 to /fonts/Hack: busy",
       )
     ,
-    test("the deadline renders in Go's duration wording"):
+    test("the deadline renders in duration wording"):
       assertTrue(
         FamilyInstallError.TimedOut(10.minutes).render(hack) == "timed out after 10 minutes",
         FontInstaller.defaultFamilyDeadline == 10.minutes,
