@@ -25,9 +25,15 @@ object DirectorySwap:
   def replace(staging: os.Path, target: os.Path): IO[SwapError, Unit] =
     val backup = backupOf(target)
     for
-      _        <- removeStale(backup)
-      previous <- moveAside(target, backup)
-      _        <- commit(staging, target, backup, previous)
+      _ <- removeStale(backup)
+      // `moveAside` and `commit` must not be separated by an interruption checkpoint. Between them the
+      // user's existing fonts live only at `<target>.old`, and the caller's `ensuring` finalizers delete
+      // the staging directory on the way out, so an interrupt landing in that window would leave no
+      // `<target>` at all -- and the next run's `removeStale` would then delete the backup. Both steps are
+      // bounded `rename(2)` calls, so making them uninterruptible does not create an unbounded region.
+      // The trigger is not only SIGINT: a failing sibling family and the per-family deadline both
+      // interrupt this fiber at exactly these checkpoints.
+      _ <- ZIO.uninterruptible(moveAside(target, backup).flatMap(commit(staging, target, backup, _)))
     yield ()
 
   private def backupOf(target: os.Path): os.Path = target / os.up / s"${target.last}$backupSuffix"

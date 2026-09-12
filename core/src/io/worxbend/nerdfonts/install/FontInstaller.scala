@@ -238,9 +238,13 @@ final class FontInstaller(
 
   // The temp zip and the staging directory are removed once `use` completes, fails, or is interrupted, so a
   // deadline (§6.8) or a failing sibling leaves nothing behind while an existing `<root>/<Family>` stays
-  // untouched until the swap.
+  // untouched until the swap. `acquireReleaseWith` (rather than `flatMap` + `ensuring`) is load-bearing: it
+  // makes the acquire uninterruptible and registers the finalizer atomically with its success. With
+  // `ensuring` the finalizer is only installed once the continuation is entered, so an interrupt delivered
+  // while the blocking `os.temp` call is in flight would leave the file or directory on disk with nothing
+  // registered to remove it.
   private def withTempZip(use: os.Path => IO[FamilyInstallError, Unit]): IO[FamilyInstallError, Unit] =
-    createTempZip().flatMap(zip => use(zip).ensuring(Cleanup.removeFile(zip)))
+    ZIO.acquireReleaseWith(createTempZip())(Cleanup.removeFile)(use)
 
   private def createTempZip(): IO[FamilyInstallError, os.Path] = ZIO
     .attemptBlockingIO(
@@ -256,7 +260,7 @@ final class FontInstaller(
   private def withStaging(root: os.Path, family: FamilyName)(
       use: os.Path => IO[FamilyInstallError, Unit],
   ): IO[FamilyInstallError, Unit] =
-    createStaging(root, family).flatMap(staging => use(staging).ensuring(Cleanup.removeTree(staging)))
+    ZIO.acquireReleaseWith(createStaging(root, family))(Cleanup.removeTree)(use)
 
   // Staged inside `root` so the final rename is a same-filesystem `rename(2)`; the dot prefix hides it from
   // font tooling that scans the directory while an install is in flight.
