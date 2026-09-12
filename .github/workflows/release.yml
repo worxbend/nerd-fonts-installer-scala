@@ -29,7 +29,7 @@ jobs:
       relevant: ${{ steps.filter.outputs.relevant }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -82,7 +82,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # Pin to the exact commit that triggered this run, not a branch name: `github.ref` is a moving
           # reference that actions/checkout re-resolves to the branch's CURRENT tip at checkout time, so a
@@ -127,7 +127,7 @@ jobs:
           fi
 
       - name: Cache Mill, Coursier and the toolchain
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cache/coursier
@@ -176,7 +176,7 @@ jobs:
           (cd dist && shasum -a 256 "${name}.tar.gz" > "${name}.tar.gz.sha256")
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nerd-fonts-installer_${{ steps.version.outputs.value }}_${{ matrix.target }}
           path: dist/*
@@ -193,7 +193,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # Match the build jobs (see the comment there): pin to `github.sha`, not the moving `github.ref`,
           # so this checkout — and `git tag -f latest "${GITHUB_SHA}"` below — see the commit that actually
@@ -201,7 +201,7 @@ jobs:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.sha }}
 
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
