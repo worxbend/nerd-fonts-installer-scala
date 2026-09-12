@@ -8,11 +8,9 @@
     "graalvm",
     "native-image",
     "cli",
-    "picocli",
-    "ox",
+    "zio",
     "mill",
     "fonts",
-    "terminal-ui",
     "dotfiles"
   ]
 }

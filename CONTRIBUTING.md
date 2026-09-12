@@ -8,7 +8,7 @@ is a requirement; [`docs/PARITY.md`](docs/PARITY.md) records the measured compar
 
 ## Prerequisites
 
-- `git` and the `./mill` wrapper in the repository. Nothing else: the wrapper downloads Mill 1.1.7
+- `git` and the `./mill` wrapper in the repository. Nothing else: the wrapper downloads Mill 1.1.9
   (`.mill-version`) and Mill fetches the toolchain, GraalVM Community for JDK 25 (`Versions.graalvm` in
   `build.mill`). No system JDK, no `GRAALVM_HOME`, no `JAVA_HOME`.
 - For the native binary only, `native-image` links with the platform toolchain: a C compiler, libc headers
@@ -30,11 +30,11 @@ same commands on `ubuntu-24.04` and `macos-15`.
 | Scalafix | `./mill --no-daemon __.fix --check` (fix with `__.fix`) |
 | Compile, warnings are errors | `./mill --no-daemon __.compile` |
 | All tests | `./mill --no-daemon __.test` |
-| One module's tests | `./mill --no-daemon core.test` (also `config`, `picker`, `cli`, `app`) |
+| One module's tests | `./mill --no-daemon core.test` (also `config`, `cli`, `app`) |
 | Smoke from source | `./mill --no-daemon app.run --config config.example.yaml --dry-run` |
 
 Pass the application's arguments directly after `app.run`. With this repository's `./mill` wrapper
-(Mill 1.1.7) everything after a `--` separator is dropped, so `app.run -- --help` runs the tool with no
+(Mill 1.1.9) everything after a `--` separator is dropped, so `app.run -- --help` runs the tool with no
 arguments, which discovers your config and installs fonts.
 
 Definition of done, from `AGENTS.md`: compiles with `-Werror`, all tests pass, formatted, scalafix clean, and
@@ -45,54 +45,50 @@ deviation from `docs/SPEC.md` is listed in the commit or PR description and refl
 ## Module layout
 
 ```
-app -> cli -> { core, config, picker }
+app -> cli -> { core, config }
 config -> core
-picker -> core
 ```
 
 | Module | Contents |
 | --- | --- |
-| `core` | Domain values (`fonts`), the ports (`http`, `process`, `environment`), the release catalogue (`releases`) and the install engine (`install`). Never imports picocli, fansi or terminal code. |
-| `config` | Strict YAML/JSON decoding into `InstallConfig`, defaults, discovery. |
-| `picker` | The interactive picker: a pure model, a pure view, a `Terminal` port with the `stty` adapter. |
-| `cli` | The picocli boundary, `Application` (the run after flag parsing), exit codes, the event renderer, the composition root. |
-| `app` | `Main`, the SIGINT handler, the native-image reflection config. |
+| `core` | Domain values (`fonts`), the ports (`http`, `process`, `environment`), the release catalogue (`releases`) and the install engine (`install`). Never imports CLI or terminal code. |
+| `config` | Lenient YAML/JSON/HOCON decoding into `InstallConfig` via zio-config, defaults, discovery. |
+| `cli` | The argument parser, `Application` (the run after flag parsing), exit codes, the event renderer, the composition root. |
+| `app` | `Main` (a `ZIOAppDefault`), the SIGINT handler, the native-image reflection config. |
 
 Sources live in `<module>/src`, tests in `<module>/test/src`, both under the package root
 `io.worxbend.nerdfonts`. `build.mill` is the whole build; there are no plugins beyond scalafix.
 
 ## Coding rules
 
-- Direct-style Scala 3: braceless syntax, explicit return types on public members, opaque types and enums
+- ZIO-native Scala 3: braceless syntax, explicit return types on public members, opaque types and enums
   for domain values (`FamilyName`, `ReleaseTag`, `ByteLimit`, `DryRun`, …), never raw `String`/`Boolean` in
   a domain position.
-- Recoverable failures are `Either[E, A]` with one sealed error ADT per concern; each ADT has a `render`
-  that yields the message without an operation prefix, which the caller adds. Exceptions cross a boundary
-  only as defects, as `InterruptedException`, or as the engine's private `FamilyInstallAborted`.
-- No class-level `var`, no `null`, no `return`, no `while` (scalafix `DisableSyntax` enforces it). The one
-  exception is picocli's `RootCommand`, whose setters must mutate something; it carries
-  `@SuppressWarnings(Array("scalafix:DisableSyntax.var"))` with a one-line reason.
-- Side effects live behind small ports (`HttpClient`, `ProcessRunner`, `Environment`, `Terminal`,
-  `FontCacheRefresher`, `InstallEventSink`); concurrency is Ox (`supervised`, `Flow`, `Actor`,
-  `timeoutEither`), never Futures and never the throwing `ox.timeout`. Nothing below the composition root
-  reads `sys.env` or `sys.props`.
+- Recoverable failures live in ZIO's typed error channel with one sealed error ADT per concern; each ADT
+  has a `render` that yields the message without an operation prefix, which the caller adds. Exceptions
+  cross a boundary only as defects; every `ZIO.attempt` maps its throwable into the ADT.
+- No class-level `var`, no `null`, no `return`, no `while` (scalafix `DisableSyntax` enforces it), and no
+  mutable state outside `Ref`.
+- Side effects live behind small ports (`HttpClient`, `ProcessRunner`, `Environment`,
+  `FontCacheRefresher`, `InstallEventSink`); concurrency is ZIO (fibers, `Scope`, `ZIO.timeout`), never
+  Futures and never blocking waits off the blocking pool. Nothing below the composition root reads
+  `sys.env` or `sys.props`.
 - The security invariants are not up for negotiation: every family name passes `FamilyName.parse` before
   touching a path or URL; downloads and extraction are byte-capped; a checksum mismatch is fatal; installs
   are staged then renamed. See [`docs/SECURITY.md`](docs/SECURITY.md).
 
 ## Tests
 
-munit with munit-scalacheck; one scenario per test, named as a sentence
-(`test("rejects a family name containing a slash")`). Tests never leave the machine: the JDK HTTP adapter
-is tested against a loopback `com.sun.net.httpserver.HttpServer`, everything else against fakes.
+zio-test with `zio-test-magnolia` for property tests; one scenario per test, named as a sentence
+(`test("rejects a family name containing a slash")`). Tests never leave the machine: the zio-http adapter
+is tested against a loopback server, everything else against fakes.
 
 | Location | Fake | Used by |
 | --- | --- | --- |
-| `core/test` | `http.InMemoryHttpClient` (routes `Url` → canned response, records requests, serves bodies through the real `BoundedInputStream`) | every module |
-| `core/test` | `process.FakeProcessRunner` (prefix-matched scripts, records calls, fixed `lookPath` table) | `core`, `picker` (`picker.test` depends on `core.test` in `build.mill`) |
-| `core/test` (`install`, package-private) | `FontZips` builds zips in memory, `RecordingSink` is a deliberately unsynchronised `InstallEventSink`, `GatedHttpClient` holds chosen requests behind a latch for interrupt and deadline tests | `FontInstallerSuite` |
+| `core/test` | `http.InMemoryHttpClient` (routes `Url` → canned response, records requests, serves bodies through the real byte cap) | every module |
+| `core/test` | `process.FakeProcessRunner` (prefix-matched scripts, records calls, fixed `lookPath` table) | `core`, `cli` |
+| `core/test` (`install`, package-private) | `FontZips` builds zips in memory, `RecordingSink` records `InstallEventSink` events, `GatedHttpClient` holds chosen requests behind a latch for interrupt and deadline tests | `FontInstallerSuite` |
 | `config/test` | `ConfigFiles.write(dir, name, text)` writes fixtures into a suite's temp directory | `config` |
-| `picker/test` | `ScriptedTerminal(keys, viewport, rawMode)` feeds a key script, records every `Frame`, counts raw-mode entries and exits; `Fixtures` holds shared releases and a key-press helper | `picker`, `cli` |
 | `cli/test` | `Fakes` builds an `AppDependencies` whose every seam is a pure function and `Fakes.run(deps, args*)` captures both streams and the exit code | `cli` |
 
 When you add a port, add its fake next to the port's tests and make it public if another module will need
@@ -122,9 +118,9 @@ scripts/ci/interrupt-smoke.sh out/app/nativeImage.dest/native-executable
 `git rev-parse --short=12 HEAD`, the date from `NERD_FONTS_INSTALLER_BUILD_DATE` (else `unknown`), both
 generated into `cli.BuildInfo` by `build.mill`. The image is built with `--no-fallback`, so a class that
 needs reflection must be listed in
-`app/resources/META-INF/native-image/io.worxbend/nerd-fonts-installer/reflect-config.json`; `MainSuite`
-fails if a picocli `@Command` class is missing from it. `./mill --no-daemon app.writeAssembly` writes a
-runnable JVM jar to `dist/nerd-fonts-installer.jar` for local convenience; nothing ships as a jar.
+`app/resources/META-INF/native-image/io.worxbend/nerd-fonts-installer/reflect-config.json`; the hand-rolled
+parser uses no reflection, so `MainSuite` asserts that file stays empty. `./mill --no-daemon app.writeAssembly`
+writes a runnable JVM jar to `dist/nerd-fonts-installer.jar` for local convenience; nothing ships as a jar.
 
 ## Cutting a release
 

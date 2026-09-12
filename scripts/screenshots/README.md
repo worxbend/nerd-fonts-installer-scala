@@ -19,7 +19,7 @@ the native binary, not drawn by hand. Nothing beyond Python 3's standard library
 
 | Shot | Command | Notes |
 | --- | --- | --- |
-| `cli-help.svg` | `--help` | picocli usage text, verbatim |
+| `cli-help.svg` | `--help` | the parser's usage text, verbatim |
 | `cli-dry-run.svg` | `--config config.example.yaml --dry-run` | `FORCE_COLOR=1` because stdout is a file; `HOME=/home/dev` so the destination reads like an ordinary machine |
 | `cli-font-names.svg` | `--font-names \| head -20` | live when GitHub answers, otherwise the fixture |
 
