@@ -8,7 +8,7 @@ commit/PR description and reflected back here.
 ## 1. Goal
 
 This tool installs [Nerd Fonts](https://github.com/ryanoasis/nerd-fonts) from a declarative config file
-and ships as a GraalVM native binary for Linux (amd64, arm64) and macOS (amd64, arm64). It resolves a
+and ships as a GraalVM native binary for Linux (amd64, arm64). It resolves a
 release, downloads one zip per font family from GitHub, verifies it against the release's `SHA-256.txt`,
 extracts only font files into `<destination>/<Family>/` atomically, and optionally runs `fc-cache`.
 
@@ -541,11 +541,10 @@ Tests are **zio-test** (`zio.test.sbt.ZTestFramework`); every port is faked and 
 `README.md` (best-in-class),
 `docs/ARCHITECTURE.md` (module map, invariants, decision log), `docs/SECURITY.md`, `CONTRIBUTING.md`,
 `CHANGELOG.md`, `config.example.yaml`, `scripts/install.sh`,
-`.github/workflows/checks.yml` (fmt, scalafix, compile, tests on `ubuntu-24.04` + `macos-15`),
-`.github/workflows/release.yml` (4 native images built by `./mill app.nativeImage` on a per-target runner matrix —
+`.github/workflows/checks.yml` (fmt, scalafix, compile, tests on `ubuntu-24.04`),
+`.github/workflows/release.yml` (2 native images built by `./mill app.nativeImage` on a per-target runner matrix —
 native-image cannot cross-compile and the Mill-fetched toolchain means no `setup-graalvm`/`setup-java` step:
-`linux-amd64` → `ubuntu-24.04`, `linux-arm64` → `ubuntu-24.04-arm`, `macos-amd64` → `macos-15-intel`,
-`macos-arm64` → `macos-15`; never `macos-latest` or the retired `macos-13`; tar.gz + sha256 per target; GitHub
+`linux-amd64` → `ubuntu-24.04`, `linux-arm64` → `ubuntu-24.04-arm`; tar.gz + sha256 per target; GitHub
 Release on `v*` tags and a moving `latest` pre-release with stable asset names), `.github/dependabot.yml`,
 `AGENTS.md` + `CLAUDE.md`. `app.writeAssembly` (JVM jar) is a local convenience only.
 

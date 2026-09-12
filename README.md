@@ -11,7 +11,7 @@
 [![License: MIT](https://img.shields.io/github/license/worxbend/nerd-fonts-installer-scala?label=license&color=5BA8FF)](LICENSE)
 [![Scala 3](https://img.shields.io/badge/Scala-3.9-DC322F?logo=scala&logoColor=white)](https://scala-lang.org)
 [![GraalVM native image](https://img.shields.io/badge/GraalVM-native--image-46E5E0)](https://www.graalvm.org/latest/reference-manual/native-image/)
-[![Platforms](https://img.shields.io/badge/platform-linux%20%7C%20macOS-8A7CFF)](#quick-start)
+[![Platforms](https://img.shields.io/badge/platform-linux-8A7CFF)](#quick-start)
 
 [Quick start](#quick-start) &nbsp;•&nbsp;
 [Configuration](#configuration) &nbsp;•&nbsp;
@@ -72,7 +72,7 @@ curl --proto '=https' --tlsv1.2 -sSfL \
   https://github.com/worxbend/nerd-fonts-installer-scala/releases/download/latest/install.sh | sh
 ```
 
-`scripts/install.sh` detects `{linux,macos}-{amd64,arm64}`, downloads the matching tarball and
+`scripts/install.sh` detects `linux-{amd64,arm64}`, downloads the matching tarball and
 `checksums.txt` from the same GitHub release, verifies the SHA-256, and installs into `~/.local/bin` — no
 root, no package manager. Set `NERD_FONTS_INSTALLER_VERSION=v1.0.0` before the pipe to pin an exact tag, or
 `NERD_FONTS_INSTALLER_INSTALL_DIR` to change where the binary lands.
@@ -390,17 +390,6 @@ font list at launch.
 </details>
 
 <details>
-<summary>Notes for macOS</summary>
-
-<br>
-
-`fc-cache` usually isn't present, so `refresh_font_cache: true` just emits a one-line warning
-(`fc-cache is not available; skipping font cache refresh.`) and the install still succeeds. Font Book picks
-up `~/Library/Fonts` automatically if you point `destination` there instead.
-
-</details>
-
-<details>
 <summary>I sent a second <code>Ctrl-C</code> and now there's a stray <code>.old</code> or <code>.ttf</code>-less staging directory</summary>
 
 <br>
@@ -453,7 +442,7 @@ never a public issue.
 ### The gate
 
 Every change must pass all of these before it's committed; CI (`.github/workflows/checks.yml`) runs the
-same commands on `ubuntu-24.04` and `macos-15`.
+same commands on `ubuntu-24.04`.
 
 | Check | Command |
 | --- | --- |

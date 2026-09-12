@@ -29,8 +29,7 @@ require mktemp
 os="$(uname -s)"
 case "${os}" in
   Linux) os=linux ;;
-  Darwin) os=macos ;;
-  *) die "unsupported OS: ${os} (Linux and macOS are supported)" ;;
+  *) die "unsupported OS: ${os} (only Linux binaries are published; build from source for others)" ;;
 esac
 
 arch="$(uname -m)"

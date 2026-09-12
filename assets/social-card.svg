@@ -69,7 +69,7 @@
       <rect x="632" y="322" width="120" height="34" rx="6" fill="#5BF0B8"/>
       <text x="692" y="345" text-anchor="middle">no JVM</text>
       <rect x="764" y="322" width="186" height="34" rx="6" fill="#8A7CFF"/>
-      <text x="857" y="345" text-anchor="middle">linux + macOS</text>
+      <text x="857" y="345" text-anchor="middle">linux</text>
     </g>
   </g>
 

@@ -43,6 +43,10 @@ contract, and the breaking changes listed below are absorbed at this 1.0 boundar
 
 ### Removed
 
+- **Breaking:** macOS binaries are no longer built or published. The project now ships `linux-amd64` and
+  `linux-arm64` only; macOS users should build from source. Both Darwin release targets were unbuildable —
+  GraalVM Community 25.0.2 was never published for `darwin/amd64` and the `macos-arm64` build kept failing on
+  GitHub API rate limiting — so support has been narrowed to Linux rather than carrying broken platforms.
 - **Breaking:** Removed the terminal selection mode and icon-set flag; installs are now config-file-driven only, and
   a run with no discoverable config exits 2 with the existing no-config hint.
 - **Breaking:** Single-dash long flags (`-config`, `-dry-run`) are no longer accepted; use the double-dash

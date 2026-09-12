@@ -11,8 +11,7 @@ The tool is self-sufficient: `docs/SPEC.md` is the single source of truth for ho
   (`.mill-version`) and Mill fetches the toolchain, GraalVM Community for JDK 25 (`Versions.graalvm` in
   `build.mill`). No system JDK, no `GRAALVM_HOME`, no `JAVA_HOME`.
 - For the native binary only, `native-image` links with the platform toolchain: a C compiler, libc headers
-  and zlib on Linux (`gcc`, `glibc-devel`/`libc6-dev`, `zlib1g-dev` or equivalents), Xcode Command Line Tools
-  on macOS.
+  and zlib on Linux (`gcc`, `glibc-devel`/`libc6-dev`, `zlib1g-dev` or equivalents).
 - `python3` to run `scripts/ci/interrupt-smoke.sh` locally.
 
 The first build downloads a few hundred megabytes; CI caches `~/.cache/coursier`, `~/.cache/mill` and
@@ -21,7 +20,7 @@ The first build downloads a few hundred megabytes; CI caches `~/.cache/coursier`
 ## The gate
 
 Every change must pass all of these before it is committed; CI (`.github/workflows/checks.yml`) runs the
-same commands on `ubuntu-24.04` and `macos-15`.
+same commands on `ubuntu-24.04`.
 
 | Check | Command |
 | --- | --- |
@@ -125,9 +124,8 @@ writes a runnable JVM jar to `dist/nerd-fonts-installer.jar` for local convenien
 1. Bump `Versions.project` in `build.mill`, move the `Unreleased` entries in `CHANGELOG.md` under the new
    version, and land that on `main` through a pull request.
 2. Tag the merge commit `vX.Y.Z` (an optional `-prerelease` suffix is accepted) and push the tag.
-3. `.github/workflows/release.yml` builds four native images on per-target runners (`linux-amd64` on
-   `ubuntu-24.04`, `linux-arm64` on `ubuntu-24.04-arm`, `macos-amd64` on `macos-15-intel`, `macos-arm64` on
-   `macos-15`), runs the tests on each, packages `nerd-fonts-installer_vX.Y.Z_<target>.tar.gz` with `LICENSE`,
+3. `.github/workflows/release.yml` builds two native images on per-target runners (`linux-amd64` on
+   `ubuntu-24.04`, `linux-arm64` on `ubuntu-24.04-arm`), runs the tests on each, packages `nerd-fonts-installer_vX.Y.Z_<target>.tar.gz` with `LICENSE`,
    `config.example.yaml` and `README.md` (when present), and publishes a GitHub Release with `checksums.txt`
    and `scripts/install.sh` attached, using generated notes.
 4. Every push to `main` also refreshes the moving `latest` pre-release with the same asset names. A

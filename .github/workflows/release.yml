@@ -66,17 +66,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # native-image cannot cross-compile, so every target gets its own runner. Intel macOS needs the
-        # explicit label: macos-latest is arm64 and macos-13 was retired.
+        # native-image cannot cross-compile, so every target gets its own runner.
         include:
           - target: linux-amd64
             runner: ubuntu-24.04
           - target: linux-arm64
             runner: ubuntu-24.04-arm
-          - target: macos-amd64
-            runner: macos-15-intel
-          - target: macos-arm64
-            runner: macos-15
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
 
@@ -154,17 +149,6 @@ jobs:
           path="${ref##*:}"
           test -x "${path}"
           echo "path=${path}" >> "${GITHUB_OUTPUT}"
-
-      - name: Ensure GNU timeout is available (macOS)
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          set -euo pipefail
-          # The native network smoke test needs GNU `timeout` (for --kill-after); macOS ships neither it
-          # nor gtimeout by default. Without one the script refuses to run, which would fail the build.
-          if ! command -v timeout >/dev/null 2>&1 && ! command -v gtimeout >/dev/null 2>&1; then
-            brew install coreutils
-          fi
 
       - name: Package
         shell: bash
