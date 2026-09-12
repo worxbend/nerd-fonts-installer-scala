@@ -156,6 +156,12 @@ object app extends NerdFontsModule, NativeImageModule:
     // value. Without this the shipped binary prints JDK 25's four-line `WARNING: sun.misc.Unsafe` banner
     // (triggered by `scala.runtime.LazyVals$`) to stderr on every run.
     "-J-Dsun.misc.unsafe.memory.access=allow",
+    // Netty loads a native library through `System.loadLibrary`, a restricted method. Without this the binary
+    // prints a four-line `WARNING: A restricted method ... has been called` banner to stderr before its own
+    // first line of output, on every run that touches the HTTP client. The JDK also states that restricted
+    // methods "will be blocked in a future release unless native access is enabled", so this is a
+    // forward-compatibility fix, not only cosmetic.
+    "--enable-native-access=ALL-UNNAMED",
   )
 
   def writeAssembly(dest: String = "dist/nerd-fonts-installer.jar") = Task.Command:
