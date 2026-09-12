@@ -11,11 +11,40 @@ All notable changes to this project are documented here. The format follows
 
 - `docs/SECURITY.md` (threat model, controls, reporting), `CONTRIBUTING.md`, GitHub issue forms and a pull
   request template.
+- HOCON configuration support, including the `.hocon` extension, which joins `yaml`, `yml`, `json` and
+  `conf` in the discovery order.
+
+### Changed
+
+- **Breaking:** `.conf` files are now parsed as HOCON rather than YAML. `.conf` is HOCON's conventional
+  extension, and the previous mapping was a wart. A flat `key: value` file parses identically under both,
+  but a YAML block sequence (`- JetBrainsMono`) is not valid HOCON and must be rewritten as
+  `families = ["JetBrainsMono"]` or given a `.yaml` extension.
+- **Breaking:** A config file whose extension is missing or unrecognised is now a hard error (exit 1, the
+  same as every other config-load failure) instead of being decoded as YAML. Silently guessing the format
+  hid typos such as `config.yam`.
+- `.json` files are decoded by Typesafe Config rather than a strict JSON parser. HOCON is a superset of
+  JSON, so every valid JSON document still parses; the practical difference is that JSON-with-comments and
+  unquoted keys are now accepted instead of rejected.
+- **Breaking:** Unrecognised keys in a config file are now ignored instead of rejected. Previously an extra
+  key failed the load with `unknown field "bogus"`; zio-config accepts it and decodes the keys it knows.
+  A consequence worth knowing: a misspelled key is silently ignored, so `familes:` no longer fails the run —
+  it falls back to the default for `families` and the mistake surfaces as "at least one font family is
+  required" rather than as a spelling error.
+- **Breaking:** A scalar where a list is expected is now accepted. `families: FiraCode` decodes as
+  `["FiraCode"]` instead of failing with `field "families" must be a list`.
+- Rebuilt on ZIO 2: effects, concurrency and resource safety now go through `ZIO`, HTTP through zio-http
+  and configuration decoding through zio-config. Toolchain moved to Scala 3.9, GraalVM for JDK 25.0.2 and
+  Mill 1.1.9.
 
 ### Removed
 
 - **Breaking:** Removed the terminal selection mode and icon-set flag; installs are now config-file-driven only, and
   a run with no discoverable config exits 2 with the existing no-config hint.
+- **Breaking:** Single-dash long flags (`-config`, `-dry-run`) are no longer accepted; use the double-dash
+  forms (`--config`, `--dry-run`). The Go reference accepted both. A single-dash long flag is now rejected
+  with exit 2 rather than being silently ignored, which previously risked `-dry-run` performing a real
+  installation.
 
 ## [0.1.0] - 2026-09-11
 
