@@ -17,10 +17,14 @@ import io.worxbend.nerdfonts.releases.Release
 import java.io.PrintWriter
 import java.io.StringWriter
 
+import zio.UIO
+import zio.ZIO
+
 /**
  * Pure stand-ins for every seam in `AppDependencies`, plus a runner that captures both streams. The defaults
  * describe a machine with no config anywhere, a catalogue of two releases and no terminal, so each test
- * overrides only the seam it is about.
+ * overrides only the seam it is about. Every effectful seam is a `ZIO` value, so the fakes never touch the
+ * network or the disk and interruption is expressed as `ZIO.interrupt`.
  */
 private[cli] object Fakes:
   val cwd: os.Path  = os.Path("/workspace")
@@ -57,27 +61,29 @@ private[cli] object Fakes:
   )
 
   /** The candidate list discovery would search on the fake machine. */
-  def candidates(env: Environment): Vector[os.Path] = ConfigLocations.candidates(env).getOrElse(Vector.empty)
+  def candidates(env: Environment): UIO[Vector[os.Path]] =
+    ConfigLocations.candidates(env).orElseSucceed(Vector.empty)
 
   def deps(env: Environment = environment()): AppDependencies = AppDependencies(
     environment = env,
     colours = ColourMode.Plain,
-    loadConfig = path => Left(ConfigError.NotFound(path)),
-    discoverConfig = () => Right(None),
+    loadConfig = path => ZIO.fail(ConfigError.NotFound(path)),
+    discoverConfig = () => ZIO.succeed(None),
     configCandidates = () => candidates(env),
-    listReleases = () => Right(releases),
-    installFonts = (_, _) => Right(()),
+    listReleases = () => ZIO.succeed(releases),
+    installFonts = (_, _) => ZIO.unit,
     expandDestination = PathExpander.expand(_, env),
   )
 
   /** What one `Cli.run` produced. */
   final case class Run(code: Int, out: String, err: String)
 
-  def run(deps: AppDependencies, args: String*): Run =
-    val out  = StringWriter()
-    val err  = StringWriter()
-    val code = Cli.run(args.toArray, PrintWriter(out, true), PrintWriter(err, true), deps)
-    Run(code, out.toString, err.toString)
+  def runCli(deps: AppDependencies, args: String*): UIO[Run] =
+    val out = StringWriter()
+    val err = StringWriter()
+    Cli
+      .run(args.toArray, PrintWriter(out, true), PrintWriter(err, true), deps)
+      .map(code => Run(code, out.toString, err.toString))
 
   def options(
       explicitConfig: Option[String] = None,
@@ -86,5 +92,5 @@ private[cli] object Fakes:
   ): CliOptions = CliOptions(explicitConfig, mode, dryRun)
 
   /** `Application.run` against throwaway writers, for tests that only care about the returned value. */
-  def application(options: CliOptions, deps: AppDependencies): Either[AppFailure, AppOutcome] =
+  def application(options: CliOptions, deps: AppDependencies): UIO[Either[AppFailure, AppOutcome]] =
     Application.run(options, deps, PrintWriter(StringWriter(), true), PrintWriter(StringWriter(), true))

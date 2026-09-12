@@ -61,13 +61,12 @@ object AppFailure:
     case None       => cause.render
 
   private def configPath(cause: ConfigError): Option[os.Path] = cause match
-    case ConfigError.NotFound(path)        => Some(path)
-    case ConfigError.Unreadable(path, _)   => Some(path)
-    case ConfigError.Parse(path, _)        => Some(path)
-    case ConfigError.UnknownField(path, _) => Some(path)
-    case ConfigError.WrongType(path, _, _) => Some(path)
-    case ConfigError.Invalid(path, _)      => Some(path)
-    case ConfigError.NoWorkingDirectory(_) => None
+    case ConfigError.NotFound(path)             => Some(path)
+    case ConfigError.Unreadable(path, _)        => Some(path)
+    case ConfigError.Parse(path, _)             => Some(path)
+    case ConfigError.UnsupportedFormat(path, _) => Some(path)
+    case ConfigError.Invalid(path, _)           => Some(path)
+    case ConfigError.NoWorkingDirectory(_)      => None
 
 /**
  * Where an interrupt landed. Go reports a SIGINT during the install as `install fonts: … context canceled`,

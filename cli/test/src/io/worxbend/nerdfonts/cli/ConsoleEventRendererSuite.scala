@@ -9,8 +9,13 @@ import io.worxbend.nerdfonts.releases.ReleaseUrls
 import java.io.PrintWriter
 import java.io.StringWriter
 
+import zio.test.Spec
+import zio.test.TestEnvironment
+import zio.test.ZIOSpecDefault
+import zio.test.assertTrue
+
 /** The §6.9 table: all eight events, in both colour modes. */
-final class ConsoleEventRendererSuite extends munit.FunSuite:
+object ConsoleEventRendererSuite extends ZIOSpecDefault:
   private val esc    = "\u001b"
   private val hack   = family("Hack")
   private val url    = ReleaseUrls.github.download(ReleaseSelector.Latest, hack)
@@ -47,46 +52,53 @@ final class ConsoleEventRendererSuite extends munit.FunSuite:
 
   private def stripAnsi(text: String): String = text.replaceAll("\u001b\\[[0-9;]*m", "")
 
-  test("plain mode prints the Go wording with glyphs and routes plan lines to stdout"):
-    assertEquals(render(ColourMode.Plain), (plainOut, plainErr))
+  private def hostileEmission(colours: ColourMode): String =
+    val hostile  = family(s"Hack${esc}]0;pwned${esc}[2J")
+    val out      = StringWriter()
+    val err      = StringWriter()
+    val renderer = ConsoleEventRenderer(PrintWriter(out, true), PrintWriter(err, true), colours)
+    renderer.emit(InstallEvent.Installed(hostile, target))
+    out.toString + err.toString
 
-  test("plain output contains no escape sequences"):
-    val (out, err) = render(ColourMode.Plain)
-    assert(!(out + err).contains(esc))
-
-  test("ansi mode prints the same text once colours are stripped"):
-    val (out, err) = render(ColourMode.Ansi)
-    assertEquals((stripAnsi(out), stripAnsi(err)), (plainOut, plainErr))
-
-  test("ansi mode paints each role with its lipgloss colour"):
-    val (out, err) = render(ColourMode.Ansi)
-    val text       = out + err
-    assert(text.contains(s"$esc[38;5;63m•"), text)
-    assert(text.contains(s"$esc[38;5;63m↻"), text)
-    assert(text.contains(s"$esc[38;5;63m⠋"), text)
-    assert(text.contains(s"$esc[38;5;42m$esc[1m✅"), text)
-    assert(text.contains(s"$esc[38;5;214m•"), text)
-    assert(text.contains(s"$esc[38;5;81m$esc[1mHack"), text)
-    assert(text.contains(s"$esc[38;5;39m$esc[4mhttps://"), text)
-    assert(text.contains(s"$esc[38;5;219m/fonts"), text)
-
-  test("plan lines never reach stderr and progress lines never reach stdout"):
-    val (out, err) = render(ColourMode.Ansi)
-    assert(!stripAnsi(out).contains("Installing") && !stripAnsi(err).contains("Would install"))
-
-  // `FamilyName.parse` allows control characters (only `/`, `\`, NUL and `.`/`..` are rejected), and a release
-  // asset stem reaches this renderer before any further validation, so a spoofed release can carry a raw
-  // escape sequence straight into a family name. Neither colour mode may forward it to the terminal.
-  test("a hostile family name never reaches the terminal as a live escape sequence, in either colour mode"):
-    val hostile                              = family(s"Hack${esc}]0;pwned${esc}[2J")
-    def emitted(colours: ColourMode): String =
-      val out      = StringWriter()
-      val err      = StringWriter()
-      val renderer = ConsoleEventRenderer(PrintWriter(out, true), PrintWriter(err, true), colours)
-      renderer.emit(InstallEvent.Installed(hostile, target))
-      out.toString + err.toString
-    val plain                                = emitted(ColourMode.Plain)
-    val coloured                             = emitted(ColourMode.Ansi)
-    assert(!plain.contains(esc), plain)
-    assert(plain.contains("Hack?]0;pwned?[2J"), plain)
-    assert(!stripAnsi(coloured).contains(esc), coloured)
+  override def spec: Spec[TestEnvironment, Any] = suite("ConsoleEventRenderer")(
+    test("plain mode prints the Go wording with glyphs and routes plan lines to stdout"):
+      assertTrue(render(ColourMode.Plain) == (plainOut, plainErr))
+    ,
+    test("plain output contains no escape sequences"):
+      val (out, err) = render(ColourMode.Plain)
+      assertTrue(!(out + err).contains(esc))
+    ,
+    test("ansi mode prints the same text once colours are stripped"):
+      val (out, err) = render(ColourMode.Ansi)
+      assertTrue((stripAnsi(out), stripAnsi(err)) == (plainOut, plainErr))
+    ,
+    test("ansi mode paints each role with its lipgloss colour"):
+      val (out, err) = render(ColourMode.Ansi)
+      val text       = out + err
+      assertTrue(
+        text.contains(s"$esc[38;5;63m•"),
+        text.contains(s"$esc[38;5;63m↻"),
+        text.contains(s"$esc[38;5;63m⠋"),
+        text.contains(s"$esc[38;5;42m$esc[1m✅"),
+        text.contains(s"$esc[38;5;214m•"),
+        text.contains(s"$esc[38;5;81m$esc[1mHack"),
+        text.contains(s"$esc[38;5;39m$esc[4mhttps://"),
+        text.contains(s"$esc[38;5;219m/fonts"),
+      )
+    ,
+    test("plan lines never reach stderr and progress lines never reach stdout"):
+      val (out, err) = render(ColourMode.Ansi)
+      assertTrue(!stripAnsi(out).contains("Installing"), !stripAnsi(err).contains("Would install"))
+    ,
+    // `FamilyName.parse` allows control characters (only `/`, `\`, NUL and `.`/`..` are rejected), and a
+    // release asset stem reaches this renderer before any further validation, so a spoofed release can carry a
+    // raw escape sequence straight into a family name. Neither colour mode may forward it to the terminal.
+    test("a hostile family name never reaches the terminal as a live escape sequence, in either colour mode"):
+      val plain    = hostileEmission(ColourMode.Plain)
+      val coloured = hostileEmission(ColourMode.Ansi)
+      assertTrue(
+        !plain.contains(esc),
+        plain.contains("Hack?]0;pwned?[2J"),
+        !stripAnsi(coloured).contains(esc),
+      ),
+  )

@@ -3,6 +3,8 @@ package io.worxbend.nerdfonts.cli
 import io.worxbend.nerdfonts.environment.ColourMode
 import io.worxbend.nerdfonts.environment.Environment
 
+import zio.UIO
+
 /**
  * Decides once per process whether renderers may emit ANSI colour.
  *
@@ -18,9 +20,17 @@ object OutputStyle:
   private val cliColour    = "CLICOLOR_FORCE"
   private val forceColour  = "FORCE_COLOR"
 
-  def detect(env: Environment, consoleAttached: Boolean): ColourMode =
-    val disabled = env.variable(noColour).isDefined || env.variable(term).contains(dumbTerminal)
-    if !disabled && (consoleAttached || forced(env)) then ColourMode.Ansi else ColourMode.Plain
+  def detect(env: Environment, consoleAttached: Boolean): UIO[ColourMode] =
+    for
+      noColourSet <- env.variable(noColour).map(_.isDefined)
+      dumb        <- env.variable(term).map(_.contains(dumbTerminal))
+      force       <- forced(env)
+    yield
+      if !(noColourSet || dumb) && (consoleAttached || force) then ColourMode.Ansi
+      else ColourMode.Plain
 
-  private def forced(env: Environment): Boolean = env.variable(cliColour).exists(_ != "0") ||
-    env.variable(forceColour).exists(value => value.nonEmpty && value != "0")
+  private def forced(env: Environment): UIO[Boolean] =
+    for
+      cli   <- env.variable(cliColour).map(_.exists(_ != "0"))
+      force <- env.variable(forceColour).map(_.exists(value => value.nonEmpty && value != "0"))
+    yield cli || force

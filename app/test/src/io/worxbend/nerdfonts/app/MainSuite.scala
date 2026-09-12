@@ -1,45 +1,35 @@
 package io.worxbend.nerdfonts.app
 
-import java.io.File
-
-import picocli.CommandLine.Command
+import zio.ZIO
+import zio.test.Spec
+import zio.test.TestEnvironment
+import zio.test.ZIOSpecDefault
+import zio.test.assertTrue
 
 /**
- * Guards the hand-maintained native-image reflection config: picocli reads a command class reflectively, so
- * a `@Command` class missing from the list compiles and passes every JVM test yet fails in the shipped binary.
+ * Guards the entry point and its native-image contract. The hand-rolled parser uses no reflection (that is
+ * why picocli is gone), so the reflection config the shipped binary reads must stay empty: a stray entry
+ * would compile and pass every JVM test yet quietly re-introduce a reflective dependency the image cannot
+ * satisfy without configuration.
  */
-final class MainSuite extends munit.FunSuite:
-  private val cliPackage = os.RelPath("io/worxbend/nerdfonts/cli")
-
+object MainSuite extends ZIOSpecDefault:
   private val reflectConfig =
     os.RelPath("app/resources/META-INF/native-image/io.worxbend/nerd-fonts-installer/reflect-config.json")
 
-  test("the main object loads"):
-    assertEquals(Class.forName("io.worxbend.nerdfonts.app.Main$").getSimpleName, "Main$")
-
-  test("the native reflection config covers every picocli command class"):
-    val commands = cliClasses().filter(Class.forName(_).isAnnotationPresent(classOf[Command]))
-    assert(commands.nonEmpty, "no @Command class found on the class path")
-    assertEquals(commands.toSet.diff(configuredClasses()), Set.empty[String])
-
-  private def configuredClasses(): Set[String] =
-    val root = os.Path(System.getProperty("nerdfonts.repoRoot"))
-    ujson.read(os.read(root / reflectConfig)).arr.map(_("name").str).toSet
-
-  // Top-level classes only: `$`-suffixed companions and anonymous classes are never picocli commands.
-  private def cliClasses(): Vector[String] = classPathDirectories()
-    .map(_ / cliPackage)
-    .filter(os.isDir)
-    .flatMap(dir =>
-      os.list(dir)
-        .filter(file => file.ext == "class" && !file.baseName.contains('$'))
-        .map(file => s"${cliPackage.segments.mkString(".")}.${file.baseName}"),
-    )
-
-  private def classPathDirectories(): Vector[os.Path] = System
-    .getProperty("java.class.path")
-    .split(File.pathSeparatorChar)
-    .toVector
-    .filter(_.nonEmpty)
-    .map(entry => os.Path(java.nio.file.Path.of(entry).toAbsolutePath))
-    .filter(os.isDir)
+  override def spec: Spec[TestEnvironment, Any] = suite("Main")(
+    test("the main object loads"):
+      ZIO
+        .attempt(Class.forName("io.worxbend.nerdfonts.app.Main$").getSimpleName)
+        .map(name => assertTrue(name == "Main$"))
+    ,
+    test("Main is a ZIOAppDefault so the runtime, not a returned value, sets the exit code"):
+      assertTrue(Main.isInstanceOf[zio.ZIOAppDefault])
+    ,
+    test("the native reflection config is empty, proving the parser needs no reflection"):
+      ZIO
+        .attempt {
+          val root = os.Path(System.getProperty("nerdfonts.repoRoot"))
+          os.read(root / reflectConfig).replaceAll("\\s", "")
+        }
+        .map(content => assertTrue(content == "[]")),
+  )
