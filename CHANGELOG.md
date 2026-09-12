@@ -12,6 +12,11 @@ All notable changes to this project are documented here. The format follows
 - `docs/SECURITY.md` (threat model, controls, reporting), `CONTRIBUTING.md`, GitHub issue forms and a pull
   request template.
 
+### Removed
+
+- **Breaking:** Removed the terminal selection mode and icon-set flag; installs are now config-file-driven only, and
+  a run with no discoverable config exits 2 with the existing no-config hint.
+
 ## [0.1.0] - 2026-09-11
 
 Initial release: a Scala 3 re-implementation of the Go
@@ -26,8 +31,6 @@ user-facing behaviour, shipped as GraalVM native binaries that need no JVM.
   `$XDG_CONFIG_HOME` or `~/.config`.
 - `--dry-run` prints the plan (URL and target per family, the font-cache line) without touching the network
   or the disk; `--font-names` prints YAML-ready family names for the configured or latest release.
-- An interactive terminal picker (`--interactive`) with release and family steps, fuzzy filtering,
-  select-all, and `--icons auto|nerd|unicode|ascii`; cancelling exits 0.
 - The install engine: up to four families at once, each downloaded to a temp file while its SHA-256 is
   computed, verified against the release's `SHA-256.txt` (a missing manifest warns, a mismatch is fatal),
   extracted (only `.ttf`/`.otf`/`.ttc`, flattened, byte-capped) into a staging directory and renamed
@@ -38,9 +41,8 @@ user-facing behaviour, shipped as GraalVM native binaries that need no JVM.
   archive, 1 MiB manifest, 8 MiB per API page.
 - SIGINT handling that unwinds cleanly: in-flight downloads abort, temp files and staging directories are
   removed, the terminal is restored, exit 1 with `install fonts: interrupted`; a second SIGINT halts with 130.
-- Exit codes matching the Go `exitCodeFor`: 0 success or picker cancelled; 2 for user-correctable input
-  (malformed flags, invalid `--icons`, no config, `--interactive` without a terminal, unknown release, no
-  releases); 1 for everything else.
+- Exit codes matching the Go `exitCodeFor`: 0 success; 2 for user-correctable input
+  (malformed flags, no config, unknown release, no releases); 1 for everything else.
 - Every flag accepted with a single dash as well (`-config`, `-dry-run`, …); `--version` prints
   `nerd-fonts-installer <version> (<commit>, <date>)`.
 - Colour handling through `NO_COLOR`, `TERM=dumb`, `CLICOLOR_FORCE` and `FORCE_COLOR`.
@@ -52,9 +54,8 @@ user-facing behaviour, shipped as GraalVM native binaries that need no JVM.
 
 ### Changed
 
-- Compared with the Go reference, `--help` prints usage to stdout and exits 0 (Go: stderr, exit 2), and the
-  picker's `h`/`l`/`f`/`d`/`u` paging aliases are not bound. Both are recorded in `docs/SPEC.md` and
-  `docs/PARITY.md`.
+- Compared with the Go reference, `--help` prints usage to stdout and exits 0 (Go: stderr, exit 2).
+  This is recorded in `docs/SPEC.md` and `docs/PARITY.md`.
 
 [Unreleased]: https://github.com/worxbend/nerd-fonts-installer-scala/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/worxbend/nerd-fonts-installer-scala/releases/tag/v0.1.0

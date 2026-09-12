@@ -39,11 +39,10 @@ of scope.
 `core/src/io/worxbend/nerdfonts/fonts/FamilyName.scala`. A family name is joined onto the destination
 directory (`<root>/<Family>`, `<root>/.<Family>-<random>`, `<root>/<Family>.old`) and onto the download URL,
 so every name passes `FamilyName.parse` first. It rejects the empty string, `.`, `..`, any `/` or `\`, NUL,
-a leading `/`, and anything whose base name differs from itself. The three places a raw string becomes a
-`FamilyName` are the config loader (`InstallConfig.validated`), the picker (`PickerOutcome.of`) and the
-checksum-manifest parser (an unparseable stem is skipped, never used). `Release.families` stays
-`Vector[String]` on purpose: upstream asset stems are printed by `--font-names` and shown in the picker but
-never touch a path or URL. URL segments are additionally percent-escaped with Go's `url.PathEscape` rules
+a leading `/`, and anything whose base name differs from itself. The two places a raw string becomes a
+`FamilyName` are the config loader (`InstallConfig.validated`) and the checksum-manifest parser (an unparseable
+stem is skipped, never used). `Release.families` stays `Vector[String]` on purpose: upstream asset stems are
+printed by `--font-names` but never touch a path or URL. URL segments are additionally percent-escaped with Go's `url.PathEscape` rules
 (`ReleaseUrls`).
 
 ### Every network body is byte-capped
@@ -101,9 +100,7 @@ mismatch, a hostile archive, a deadline or an interrupt. Per-family paths are di
 ### No shell, ever
 
 `core/src/io/worxbend/nerdfonts/process/JdkProcessRunner.scala`. Subprocesses are started from an argv
-vector through `ProcessBuilder`; nothing is ever passed through `sh -c`. The only commands run are
-`fc-cache -f <root>` (streams inherited) and, for the interactive picker, `stty -g`, `stty raw -echo`,
-`stty <saved>` and `stty size` with stdin redirected from `/dev/tty`. Programs are resolved on `$PATH`
+vector through `ProcessBuilder`; nothing is ever passed through `sh -c`. The only command run is `fc-cache -f <root>` with streams inherited. Programs are resolved on `$PATH`
 through the `Environment` port before launch; a child still alive when the run is interrupted is destroyed
 before the interrupt propagates.
 
@@ -138,8 +135,8 @@ scans the directory mid-install does not pick them up, and are removed the same 
 
 `app/src/io/worxbend/nerdfonts/app/Main.scala`. SIGINT is turned into an interrupt of the main thread
 instead of the JVM's default exit, which would not unwind `finally` blocks. The Ox scopes end, in-flight
-downloads abort, every temp zip and staging directory is removed, the terminal's `stty` settings, alternate
-screen and cursor are restored, and the process exits 1 with `install fonts: interrupted`. A second SIGINT
+downloads abort, every temp zip and staging directory is removed, and the process exits 1 with
+`install fonts: interrupted`. A second SIGINT
 while that is in progress halts the process with status 130 and may leave scratch files behind; that is
 the one escape hatch for a cleanup that hangs. `scripts/ci/interrupt-smoke.sh` runs this scenario against
 the real native binary on every CI run and asserts that nothing is left under `$TMPDIR` or the destination.
@@ -149,7 +146,7 @@ the real native binary on every CI run and asserts that nothing is left under `$
 `config/src/io/worxbend/nerdfonts/config/`. Unknown keys, repeated YAML keys and values of the wrong shape
 fail the load with the field named; nothing is coerced beyond the documented YAML scalar rules. Only a bare
 `~` or a leading `~/` in `destination` is expanded. A discovered config that exists but cannot be read,
-parsed or validated is an error, never silently skipped in favour of the next candidate or the picker.
+parsed or validated is an error, never silently skipped in favour of the next candidate.
 
 ### Release artefacts
 

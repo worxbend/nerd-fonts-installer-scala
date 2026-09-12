@@ -4,7 +4,7 @@
 
 # nerd-fonts-installer-scala
 
-### Install Nerd Fonts from one YAML file or a terminal picker — a single native binary, no JVM required.
+### Install Nerd Fonts from one YAML file — a single native binary, no JVM required.
 
 [![Release](https://img.shields.io/github/v/release/worxbend/nerd-fonts-installer-scala?sort=semver&label=release&color=C75CFF)](https://github.com/worxbend/nerd-fonts-installer-scala/releases)
 [![Checks](https://img.shields.io/github/actions/workflow/status/worxbend/nerd-fonts-installer-scala/checks.yml?branch=main&label=checks&color=5BF0B8)](https://github.com/worxbend/nerd-fonts-installer-scala/actions/workflows/checks.yml)
@@ -16,7 +16,6 @@
 [Quick start](#quick-start) &nbsp;•&nbsp;
 [Configuration](#configuration) &nbsp;•&nbsp;
 [Command reference](#command-reference) &nbsp;•&nbsp;
-[Interactive picker](#interactive-picker) &nbsp;•&nbsp;
 [Troubleshooting](#troubleshooting) &nbsp;•&nbsp;
 [Security](#security-in-brief)
 
@@ -141,10 +140,6 @@ Four families install concurrently, each verified against the release's `SHA-256
 disk. Then select the patched font — e.g. **JetBrainsMono Nerd Font**, not `JetBrainsMono` — in your
 terminal or editor preferences and restart it.
 
-> [!TIP]
-> Don't want to write YAML yet? Skip step 2 and run `nerd-fonts-installer --interactive` instead — it opens
-> a terminal picker whenever no config file was found. See [Interactive picker](#interactive-picker) below.
-
 ---
 
 ## Configuration
@@ -166,7 +161,7 @@ value of the wrong shape fails the load with the field named, never silently coe
 <br>
 
 Highest priority first — the first candidate that *exists* wins; one that exists but fails to load is a
-fatal error, never silently skipped in favour of the next candidate or the picker:
+fatal error, never silently skipped in favour of the next candidate:
 
 1. `--config <path>`
 2. `$NERD_FONTS_INSTALLER_CONFIG` (also honoured by `--font-names`; a blank value falls through)
@@ -174,8 +169,7 @@ fatal error, never silently skipped in favour of the next candidate or the picke
 4. `./nerd-fonts-installer/config.{yaml,yml,json,conf}`
 5. The same two shapes under `$XDG_CONFIG_HOME` (if absolute) or `~/.config`
 
-Only when every candidate comes up empty — and `--interactive` wasn't passed — do you get the exact
-candidate list back on stderr, exit code `2`:
+Only when every candidate comes up empty do you get the exact candidate list back on stderr, exit code `2`:
 
 ```text
 no config found; pass --config, set NERD_FONTS_INSTALLER_CONFIG, or create one of: …
@@ -195,7 +189,7 @@ Two independent things can be pinned:
 
 Pinning `release:` also changes what the tool talks to: with a tag pinned, `--dry-run` and a real install
 build every download URL directly and **never call the GitHub releases-listing API at all** — only
-`--font-names` and the interactive picker browse it, because only they need to. A fleet running a pinned
+`--font-names` browses it, because only that command needs to. A fleet running a pinned
 config in parallel is not subject to GitHub's unauthenticated API rate limit.
 
 ---
@@ -205,21 +199,15 @@ config in parallel is not subject to GitHub's unauthenticated API rate limit.
 ```text
 $ nerd-fonts-installer --help
 Nerd Fonts, installed the boring way.
-Usage: nerd-fonts-installer [-h] [-dry-run] [-font-names] [-interactive]
-                            [-version] [-config=<path>] [-icons=<mode>]
-Install Nerd Fonts from a config file or an interactive picker.
+Usage: nerd-fonts-installer [-h] [-dry-run] [-font-names] [-version]
+                            [-config=<path>]
+Install Nerd Fonts from a config file.
       -config, --config=<path>
                             config file; when omitted, discover an app-named
                               config in CWD or the user config directory
       -dry-run, --dry-run   print planned downloads without installing fonts
       -font-names, --font-names
                             print YAML-ready Nerd Font family names and exit
-      -icons, --icons=<mode>
-                            interactive icon mode: auto, nerd, unicode, or
-                              ascii (default: auto)
-      -interactive, --interactive
-                            start the terminal picker when no config file is
-                              found
       -version, --version   print version information and exit
   -h, -help, --help         print this help and exit
 ```
@@ -234,8 +222,6 @@ Captured verbatim from a locally built binary — not retyped. Every option acce
 | `--config <path>` | Use a specific config file, bypassing discovery. |
 | `--dry-run` | Print the plan (`•`/`↻` lines) without any network or filesystem write. |
 | `--font-names` | Print `# <tag>` + `families:` YAML for the selected release, then exit. |
-| `--interactive` | Start the terminal picker when no config was found. |
-| `--icons <mode>` | Picker glyph set: `auto` (default, resolves to `unicode`), `nerd`, `unicode`, `ascii`. |
 | `--version` | Print `nerd-fonts-installer <version> (<commit>, <date>)`. |
 | `-h`, `--help` | Print this usage and exit — the one deliberate deviation from Go, see below. |
 
@@ -251,10 +237,6 @@ families:
   - AdwaitaMono
   … (one line per archive in the selected release)
 
-$ nerd-fonts-installer --icons bogus
-invalid --icons "bogus"; use auto, nerd, unicode, or ascii
-$ echo $?
-2
 ```
 
 `--help` and `--version` print to **stdout** and exit **0** — deliberately, so `nerd-fonts-installer --help
@@ -275,15 +257,6 @@ stderr to a log captures progress and failures without polluting anything a scri
 > stray-arg --dry-run --config fonts.yaml` silently drops both `--dry-run` and `--config`, falling through
 > to normal discovery and running a **real** install. Always put flags first; never place a bare word
 > before them on the command line.
-
-### The interactive picker cannot appear by accident
-
-`--interactive` only ever starts the picker when **all three** hold: no config was resolved from
-`--config`, `$NERD_FONTS_INSTALLER_CONFIG` or a discovered file; `--interactive` was passed explicitly; and
-*both* stdin and stdout are real terminals. A resolved config always wins over `--interactive`, even at a
-real keyboard — so a CI job that sets `$NERD_FONTS_INSTALLER_CONFIG` can never block on a prompt, regardless
-of what flags it happens to pass. With no config and no `--interactive`, the process exits `2` immediately
-with the discovery hint instead of guessing or waiting on input.
 
 ---
 
@@ -320,10 +293,10 @@ family, by design.
 
 | Situation | Code |
 | --- | --- |
-| Success, dry run, `--font-names`, `--help`, `--version`, or the picker was cancelled | `0` |
-| Malformed flag, unknown option, missing option value, invalid `--icons` value | `2` |
-| No config found and not `--interactive`; `--interactive` without a TTY; unknown release tag; no releases at all | `2` |
-| Everything else: config load/parse/validation, network, filesystem, extraction, checksum mismatch, `fc-cache` failure, unsafe picker selection, an interrupted install | `1` |
+| Success, dry run, `--font-names`, `--help`, or `--version` | `0` |
+| Malformed flag, unknown option, or missing option value | `2` |
+| No config found; unknown release tag; no releases at all | `2` |
+| Everything else: config load/parse/validation, network, filesystem, extraction, checksum mismatch, `fc-cache` failure, an interrupted install | `1` |
 | A second `Ctrl-C` while the first is still unwinding | `130` |
 
 This is a closed, stable set, safe under `set -e`:
@@ -337,42 +310,6 @@ esac
 
 ---
 
-## Interactive picker
-
-<div align="center">
-<img src="assets/screenshots/tui-families.svg" alt="The interactive picker: fuzzy-filter families, toggle a selection, and watch it become an InstallConfig" width="760" />
-</div>
-
-Launched with `--interactive` only when no config was found *and* both stdin and stdout are terminals (see
-[above](#the-interactive-picker-cannot-appear-by-accident)). Rendered on the alternate screen through a
-hand-rolled `stty`-raw-mode adapter driving a pure `PickerModel`; no Bubble Tea, no ncurses.
-
-| Key | Release step | Families step |
-| --- | --- | --- |
-| `q`, `Ctrl-C` | cancel (exit 0) — global, fires even mid-filter | cancel (exit 0) |
-| `Esc` | cancel | back to the release list |
-| `Enter` | choose the highlighted (filtered) release | finish (no-op if nothing is selected) |
-| `Space` | *(ordinary character)* | toggle the highlighted family |
-| `a` | *(ordinary character)* | select all / clear all |
-| `b` | page up (list key) | back to releases |
-| `↑`/`k`, `↓`/`j` | move | move |
-| `PgUp`/`←`, `PgDn`/`→` | page | page |
-| `Home`/`g`, `End`/`G` | first / last | first / last |
-| `/` | open the fuzzy filter | open the fuzzy filter |
-| any printable char, `Backspace` | edit the filter, re-filter live | edit the filter, re-filter live |
-
-Filtering is a case-insensitive **subsequence** match over `title + description + value`, ranked by first
-match position then span. Global keys and step keys are consumed *before* the list ever sees them — `Esc`
-never clears an open filter and `q` can't be typed into one. `--icons` picks the glyph table (`auto`
-resolves to `unicode`); every layout helper takes the render's colour mode, so `Plain` output (piped,
-`NO_COLOR`, `TERM=dumb`) never contains an `ESC[` sequence. Finishing with nothing ticked is treated the
-same as cancelling — exit `0`, nothing installed.
-
-**Deviation from Go:** the `h`/`l`/`f`/`d`/`u` paging aliases are not bound — `h`/`l` would collide with
-typing into the filter.
-
----
-
 ## Troubleshooting
 
 <details>
@@ -380,12 +317,11 @@ typing into the filter.
 
 <br>
 
-Exactly one of three things: point at a file explicitly, drop one where discovery looks, or skip the file:
+Point at a file explicitly, or drop one where discovery looks:
 
 ```bash
 nerd-fonts-installer --config /path/to/fonts.yaml
 mkdir -p ~/.config/nerd-fonts-installer && $EDITOR ~/.config/nerd-fonts-installer/config.yaml
-nerd-fonts-installer --interactive
 ```
 
 </details>
@@ -541,26 +477,23 @@ native image, so there's no separate GraalVM setup step anywhere, including in C
 ```
 $ ./mill --no-daemon __.test
 …
-634/634, SUCCESS] ./mill __.test 9s
+510/510, SUCCESS] ./mill __.test 13s
 ```
 
-(`634` is Mill's task count for the whole build graph — compiling and testing every module.) The tests
+(`510` is Mill's task count for the whole build graph — compiling and testing every module.) The tests
 themselves, run against this repository:
 
 | Module | Tests | Fakes it drives against |
 | --- | --- | --- |
-| `core` | 252 | `InMemoryHttpClient`, `FakeProcessRunner`, `FontZips`, `GatedHttpClient` (latch-held requests for interrupt/deadline tests) |
-| `config` | 98 | `ConfigFiles` (fixture writer) |
-| `picker` | 165 | `ScriptedTerminal` (key script → recorded frames, raw-mode entry/exit counts) |
-| `cli` | 109 | `Fakes` (every `AppDependencies` seam replaced with a pure function) |
+| `core` | 253 | `InMemoryHttpClient`, `FakeProcessRunner`, `FontZips`, `GatedHttpClient` (latch-held requests for interrupt/deadline tests) |
+| `config` | 81 | `ConfigFiles` (fixture writer) |
+| `cli` | 92 | `Fakes` (every `AppDependencies` seam replaced with a pure function) |
 | `app` | 2 | reflection walk of every `@Command` class against `reflect-config.json` |
-| **Total** | **626**, 0 failed, 0 ignored | across **50** test classes |
+| **Total** | **428**, 0 failed, 0 ignored | across **40** test classes |
 
 Nothing here touches the network or a real terminal: `core` tests the JDK HTTP adapter against a loopback
-`com.sun.net.httpserver.HttpServer`, and the picker's `stty` adapter runs against `FakeProcessRunner`
-(`picker.test` depends on `core.test` for exactly this). One property suite (`FamilyNamePropertySuite`,
-ScalaCheck) fuzzes `FamilyName.parse` against a hazardous-character alphabet instead of enumerating cases by
-hand.
+`com.sun.net.httpserver.HttpServer`. One property suite (`FamilyNamePropertySuite`, ScalaCheck) fuzzes
+`FamilyName.parse` against a hazardous-character alphabet instead of enumerating cases by hand.
 
 ### The native binary, measured
 
@@ -602,10 +535,10 @@ these exact figures, on yours.
                      ┌────▼────┐
                      │   cli   │   picocli boundary, Application, exit codes, event renderer
                      └────┬────┘
-             ┌────────────┼────────────┐
-        ┌────▼───┐   ┌────▼───┐   ┌────▼───┐
-        │ config │──▶│  core  │◀──│ picker │
-        └────────┘   └────────┘   └────────┘
+             ┌────────────┘
+        ┌────▼───┐   ┌────────┐
+        │ config │──▶│  core  │
+        └────────┘   └────────┘
 ```
 
 `core` has no outgoing edges to any other module — it never imports picocli, fansi, or terminal code, so it
@@ -615,14 +548,13 @@ compiles (and tests) without ever touching a process boundary.
 | --- | --- | --- |
 | `core` | ox, os-lib, upickle | Domain values (`FamilyName`, `ReleaseSelector`, …), every port (`HttpClient`, `ProcessRunner`, `Environment`), the GitHub release catalogue, and the install engine (`FontInstaller`) |
 | `config` | scala-yaml, upickle | Strict YAML/JSON decoding into `InstallConfig`, defaults, discovery |
-| `picker` | fansi, ox | Pure `PickerModel` + `PickerView`, the `Terminal` port, the `stty` adapter, the key decoder, the loading spinner |
 | `cli` | picocli, fansi | The picocli command surface, `Application` (the run after flag parsing — never sees `args` or picocli types), exit codes, `ConsoleEventRenderer`, the composition root, generated `BuildInfo` |
 | `app` | — | `Main`, SIGINT → thread-interrupt wiring, native-image reflection config |
 
-`docs/ARCHITECTURE.md` is the long version: **25 numbered invariants** a change may never silently move
+`docs/ARCHITECTURE.md` is the long version: **21 numbered invariants** a change may never silently move
 (the family-name trust boundary, every body being byte-capped, staged-then-renamed installs, the sink being
 serialised by the engine and never by the sink, …), plus a decision log explaining *why* each non-obvious
-choice was made — read it before touching `install` or `picker`.
+choice was made — read it before touching `install`.
 
 ---
 
@@ -639,7 +571,6 @@ arguments and environment, streams diffed with `diff`, scenario by scenario.
 | Concurrency | goroutines + `errgroup` | Ox `supervised` scope + `Flow.mapParUnordered` + one private cancellation exception |
 | Cancellation | `context.Context` | thread interruption (`InterruptedException` propagates out of every port) |
 | CLI parsing | `flag` (stdlib) | picocli, both dash spellings declared per option |
-| Interactive picker | Bubble Tea program | a pure `PickerModel` behind a `Terminal` loan (no framework) |
 | Distribution | statically-linked Go binary, tarballs + a Snap package + a project website/wiki | GraalVM native image, dynamically linked against glibc on Linux; tarballs + `install.sh` + `checksums.txt` only — no Snap package, no website, no wiki |
 
 Deviations kept on purpose (all documented, none accidental):
@@ -648,7 +579,6 @@ Deviations kept on purpose (all documented, none accidental):
 | --- | --- |
 | `--help` prints to stdout and exits 0 (Go: stderr, exit 2) | `--help \| less` is what people actually do; Go's exit 2 is an artefact of its `flag` package |
 | A malformed command line prints picocli's own first line, not Go's `flag provided but not defined` — same exit code and stream | Not machine-parsed; the prefix, stream and exit code scripts actually check are identical |
-| Picker `h`/`l`/`f`/`d`/`u` paging aliases are not bound | `h`/`l` would collide with typing into the filter |
 | A second `Ctrl-C` halts the process with 130 (Go absorbs repeats) | An intentional escape hatch for a cleanup that itself hangs |
 
 Parsing stops at the first positional argument on both binaries — that one isn't a deviation, it's shared

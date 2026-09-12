@@ -3,9 +3,7 @@ package io.worxbend.nerdfonts.cli
 import io.worxbend.nerdfonts.config.ConfigError
 import io.worxbend.nerdfonts.config.ConfigLocations
 import io.worxbend.nerdfonts.environment.PathError
-import io.worxbend.nerdfonts.fonts.ConfigValidationError
 import io.worxbend.nerdfonts.install.InstallError
-import io.worxbend.nerdfonts.picker.PickerError
 import io.worxbend.nerdfonts.releases.ReleaseError
 
 /**
@@ -19,12 +17,9 @@ enum AppFailure:
   case Config(cause: ConfigError, path: String)
   case DiscoveredConfig(cause: ConfigError)
 
-  /** No config anywhere and no picker; `candidates` is what discovery searched, possibly empty. */
+  /** No config anywhere; `candidates` is what discovery searched, possibly empty. */
   case NoConfig(candidates: Vector[os.Path])
-  case NotATerminal
   case Release(cause: ReleaseError)
-  case Picker(cause: PickerError)
-  case UnsafeSelection(cause: ConfigValidationError)
   case Destination(cause: PathError)
   case Install(cause: InstallError)
   case Interrupted(phase: InterruptPhase)
@@ -33,10 +28,7 @@ enum AppFailure:
     case Config(cause, path)                       => s"load config $path: ${AppFailure.renderAsTyped(cause, path)}"
     case DiscoveredConfig(cause)                   => AppFailure.renderDiscovered(cause)
     case NoConfig(candidates)                      => AppFailure.renderNoConfig(candidates)
-    case NotATerminal                              => s"${AppFailure.noConfigFound}; --interactive requires stdin and stdout terminals"
     case Release(cause)                            => cause.render
-    case Picker(cause)                             => cause.render
-    case UnsafeSelection(cause)                    => s"${AppFailure.installPrefix}${cause.render}"
     case Destination(cause)                        => s"${AppFailure.installPrefix}${cause.render}"
     case Install(cause)                            => s"${AppFailure.installPrefix}${cause.render}"
     case Interrupted(InterruptPhase.Install)       => s"${AppFailure.installPrefix}interrupted"

@@ -8,7 +8,6 @@ import io.worxbend.nerdfonts.environment.EnvironmentError
 import io.worxbend.nerdfonts.environment.PathError
 import io.worxbend.nerdfonts.fonts.ConfigValidationError
 import io.worxbend.nerdfonts.fonts.DryRun
-import io.worxbend.nerdfonts.fonts.FamilyNameError
 import io.worxbend.nerdfonts.fonts.RefreshFontCache
 import io.worxbend.nerdfonts.fonts.ReleaseSelector
 import io.worxbend.nerdfonts.http.HttpError
@@ -16,8 +15,6 @@ import io.worxbend.nerdfonts.install.FamilyInstallError
 import io.worxbend.nerdfonts.install.InstallError
 import io.worxbend.nerdfonts.install.InstallEvent
 import io.worxbend.nerdfonts.install.InstallRequest
-import io.worxbend.nerdfonts.picker.IconMode
-import io.worxbend.nerdfonts.picker.PickerOutcome
 import io.worxbend.nerdfonts.releases.ReleaseError
 import io.worxbend.nerdfonts.releases.ReleaseUrls
 
@@ -25,7 +22,7 @@ import java.util.concurrent.atomic.AtomicReference
 
 import ox.discard
 
-/** Every exit-code path of SPEC §9 `cli`, driven through `Cli.run` with fake dependencies. */
+/** Every exit-code path of SPEC §7 `cli`, driven through `Cli.run` with fake dependencies. */
 final class CliSuite extends munit.FunSuite:
   private val envVariable = ConfigLocations.configVariable
 
@@ -60,8 +57,7 @@ final class CliSuite extends munit.FunSuite:
 
   test("--help lists the options in Go's order with help last"):
     val out     = run(deps(), "--help").out
-    val flags   =
-      Vector("--config", "--dry-run", "--font-names", "--icons", "--interactive", "--version", "--help")
+    val flags   = Vector("--config", "--dry-run", "--font-names", "--version", "--help")
     val offsets = flags.map(flag => out.indexOf(s", $flag"))
     assert(offsets.forall(_ >= 0), out)
     assertEquals(offsets, offsets.sorted, out)
@@ -207,25 +203,7 @@ final class CliSuite extends munit.FunSuite:
     assertEquals(result.code, 0)
     assertEquals(seen.get().map(_.dryRun), Some(DryRun.Disabled))
 
-  test("an invalid --icons value exits 2 with the Go message, even alongside --version"):
-    val result = run(deps(), "--version", "--icons", "bogus")
-    assertEquals(result.code, 2)
-    assertEquals(result.err, "invalid --icons \"bogus\"; use auto, nerd, unicode, or ascii\n")
-    assertEquals(result.out, "")
-
-  test("--icons is trimmed and lower-cased before validation and reaches the picker"):
-    val seen   = AtomicReference(Option.empty[IconMode])
-    val d      = deps().copy(
-      isTerminal = () => true,
-      runPicker = (_, icons, _) =>
-        seen.set(Some(icons))
-        Right(PickerOutcome.Cancelled),
-    )
-    val result = run(d, "--interactive", "--icons", " NERD ")
-    assertEquals(result.code, 0)
-    assertEquals(seen.get(), Some(IconMode.Nerd))
-
-  test("no config without --interactive exits 2 with the candidate hint"):
+  test("a run with no config found and no explicit config exits 2"):
     val env    = environment()
     val result = run(deps(env))
     assertEquals(result.code, 2)
@@ -234,21 +212,10 @@ final class CliSuite extends munit.FunSuite:
       s"no config found; pass --config, set $envVariable, or create one of: ${candidates(env).mkString(", ")}\n",
     )
 
-  test("no config in a terminal without --interactive still exits 2 and never starts the picker"):
-    val d      = deps().copy(isTerminal = () => true, runPicker = (_, _, _) => fail("picker must not run"))
-    val result = run(d)
-    assertEquals(result.code, 2)
-    assert(result.err.startsWith("no config found; pass --config"), result.err)
-
   test("the hint degrades when no candidate can be computed"):
     val result = run(deps().copy(configCandidates = () => Vector.empty))
     assertEquals(result.code, 2)
     assertEquals(result.err, s"no config found; pass --config or set $envVariable\n")
-
-  test("--interactive without a terminal exits 2"):
-    val result = run(deps(), "--interactive")
-    assertEquals(result.code, 2)
-    assertEquals(result.err, "no config found; --interactive requires stdin and stdout terminals\n")
 
   test("an explicit config that fails to load exits 1 with the load config prefix"):
     val d      = deps().copy(loadConfig = path => Left(ConfigError.Unreadable(path, "permission denied")))
@@ -316,40 +283,6 @@ final class CliSuite extends munit.FunSuite:
     val result = run(broken, "--config", "flag.yaml")
     assertEquals(result.code, 1)
     assertEquals(result.err, "load config flag.yaml: open flag.yaml: no such file or directory\n")
-
-  test("a cancelled picker exits 0 after the interactive banner"):
-    val result = run(deps().copy(isTerminal = () => true), "--interactive")
-    assertEquals(result.code, 0)
-    assert(
-      result.err.startsWith("No config found. Starting interactive mode...\n\n  ✦ nerd-fonts-installer\n"),
-      result.err,
-    )
-    assert(result.err.contains("✓ Releases loaded"), result.err)
-    assertEquals(result.out, "")
-
-  test("a rejected picker selection exits 1 with the install prefix"):
-    val rejected = PickerOutcome.Rejected(ConfigValidationError.InvalidFamily(FamilyNameError.Unsafe("../x")))
-    val d        = deps().copy(isTerminal = () => true, runPicker = (_, _, _) => Right(rejected))
-    val result   = run(d, "--interactive")
-    assertEquals(result.code, 1)
-    assert(result.err.endsWith("install fonts: unsafe font family name \"../x\"\n"), result.err)
-
-  test("a picker selection is installed"):
-    val (d, seen) = recordingInstall(
-      deps().copy(isTerminal = () => true, runPicker = (_, _, _) => Right(PickerOutcome.Selected(hackConfig))),
-    )
-    assertEquals(run(d, "--interactive").code, 0)
-    assertEquals(seen.get().map(_.families), Some(Vector(family("Hack"))))
-
-  test("no releases on the picker path exits 2 and never opens the picker"):
-    val d      = deps().copy(
-      isTerminal = () => true,
-      listReleases = () => Left(ReleaseError.NoReleases),
-      runPicker = (_, _, _) => fail("picker must not run"),
-    )
-    val result = run(d, "--interactive")
-    assertEquals(result.code, 2)
-    assert(result.err.endsWith("no Nerd Fonts releases found\n"), result.err)
 
   test("one failing family prints the single install fonts line and exits 1"):
     val inter   = family("Inter")

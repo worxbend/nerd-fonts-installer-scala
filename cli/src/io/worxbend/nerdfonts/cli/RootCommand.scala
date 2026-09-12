@@ -1,7 +1,6 @@
 package io.worxbend.nerdfonts.cli
 
 import io.worxbend.nerdfonts.fonts.DryRun
-import io.worxbend.nerdfonts.picker.IconMode
 
 import scala.annotation.unused
 
@@ -12,8 +11,7 @@ import picocli.CommandLine.Parameters
 /**
  * The picocli root command. It does nothing but collect option values; picocli binds them by calling the
  * annotated setters, which is why this is the one class in the codebase allowed a `var` (SPEC §2). The
- * `--icons` value is kept raw because the reference validates it after parsing and quotes the original text.
- * Every option carries an explicit `order`: picocli lists setter-bound options in reflection order, which the
+ * root carries an explicit `order` on every option: picocli lists setter-bound options in reflection order, which the
  * JVM does not define, so without it the usage text could differ between two builds. The order is Go's
  * (`flag` sorts alphabetically), with `--help` last because Go does not list it at all.
  *
@@ -23,7 +21,7 @@ import picocli.CommandLine.Parameters
 @Command(
   name = "nerd-fonts-installer",
   header = Array("Nerd Fonts, installed the boring way."),
-  description = Array("Install Nerd Fonts from a config file or an interactive picker."),
+  description = Array("Install Nerd Fonts from a config file."),
   sortOptions = false,
   mixinStandardHelpOptions = false,
 )
@@ -59,23 +57,8 @@ final private[cli] class RootCommand:
     draft = draft.copy(mode = if value then CliMode.FontNames else CliMode.Install)
 
   @CliOption(
-    names = Array("-interactive", "--interactive"),
-    order = 4,
-    description = Array("start the terminal picker when no config file is found"),
-  )
-  def setInteractive(value: Boolean): Unit = draft = draft.copy(interactive = Interactive.fromBoolean(value))
-
-  @CliOption(
-    names = Array("-icons", "--icons"),
-    order = 3,
-    paramLabel = "<mode>",
-    description = Array("interactive icon mode: auto, nerd, unicode, or ascii (default: auto)"),
-  )
-  def setIcons(value: String): Unit = draft = draft.copy(icons = value)
-
-  @CliOption(
     names = Array("-version", "--version"),
-    order = 5,
+    order = 3,
     versionHelp = true,
     description = Array("print version information and exit"),
   )
@@ -83,7 +66,7 @@ final private[cli] class RootCommand:
 
   @CliOption(
     names = Array("-h", "-help", "--help"),
-    order = 6,
+    order = 4,
     usageHelp = true,
     description = Array("print this help and exit"),
   )
@@ -93,20 +76,14 @@ final private[cli] class RootCommand:
   @Parameters(arity = "0..*", hidden = true)
   def setIgnored(@unused values: Array[String]): Unit = ()
 
-  def rawIcons: String = draft.icons
-
-  def options(icons: IconMode): CliOptions =
-    CliOptions(draft.explicitConfig, draft.mode, draft.dryRun, draft.interactive, icons)
+  def options(): CliOptions = CliOptions(draft.explicitConfig, draft.mode, draft.dryRun)
 
 /** The values picocli has bound so far; the Go flag defaults until a setter runs. */
 final private[cli] case class OptionDraft(
     explicitConfig: Option[String],
     mode: CliMode,
     dryRun: DryRun,
-    interactive: Interactive,
-    icons: String,
 )
 
 private[cli] object OptionDraft:
-  val defaults: OptionDraft =
-    OptionDraft(None, CliMode.Install, DryRun.Disabled, Interactive.NotRequested, IconMode.Auto.render)
+  val defaults: OptionDraft = OptionDraft(None, CliMode.Install, DryRun.Disabled)

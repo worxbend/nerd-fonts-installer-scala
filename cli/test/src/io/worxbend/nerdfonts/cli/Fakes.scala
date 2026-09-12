@@ -12,8 +12,6 @@ import io.worxbend.nerdfonts.fonts.InstallConfig
 import io.worxbend.nerdfonts.fonts.RefreshFontCache
 import io.worxbend.nerdfonts.fonts.ReleaseSelector
 import io.worxbend.nerdfonts.fonts.ReleaseTag
-import io.worxbend.nerdfonts.picker.IconMode
-import io.worxbend.nerdfonts.picker.PickerOutcome
 import io.worxbend.nerdfonts.releases.Release
 
 import java.io.PrintWriter
@@ -68,9 +66,7 @@ private[cli] object Fakes:
     discoverConfig = () => Right(None),
     configCandidates = () => candidates(env),
     listReleases = () => Right(releases),
-    runPicker = (_, _, _) => Right(PickerOutcome.Cancelled),
     installFonts = (_, _) => Right(()),
-    isTerminal = () => false,
     expandDestination = PathExpander.expand(_, env),
   )
 
@@ -87,9 +83,7 @@ private[cli] object Fakes:
       explicitConfig: Option[String] = None,
       mode: CliMode = CliMode.Install,
       dryRun: DryRun = DryRun.Disabled,
-      interactive: Interactive = Interactive.NotRequested,
-      icons: IconMode = IconMode.Auto,
-  ): CliOptions = CliOptions(explicitConfig, mode, dryRun, interactive, icons)
+  ): CliOptions = CliOptions(explicitConfig, mode, dryRun)
 
   /** `Application.run` against throwaway writers, for tests that only care about the returned value. */
   def application(options: CliOptions, deps: AppDependencies): Either[AppFailure, AppOutcome] =

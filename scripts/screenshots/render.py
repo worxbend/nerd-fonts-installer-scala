@@ -4,8 +4,8 @@
 Input is the raw bytes a program wrote to a terminal: text with ANSI SGR colour sequences, plus whatever
 cursor and erase sequences a full-screen program uses to repaint itself. The transcript is replayed onto a
 small cell grid (carriage return, line feed, tab, `ESC[H`, `ESC[K`, `ESC[J` and the SGR attributes are
-honoured, everything else is skipped), so a picker that redraws the same rows sixty times renders as its
-last frame, while plain line-oriented output renders as exactly the lines it printed.
+honoured, everything else is skipped), so a full-screen program that redraws the same rows sixty times renders as its last frame, while
+plain line-oriented output renders as exactly the lines it printed.
 
 The SVG is sized from the content: one cell per column of the widest row, one line box per row. Colours
 come from the SGR codes themselves (16-colour, 256-colour and truecolour), so a run painted `38;2;255;95;175`
@@ -51,7 +51,7 @@ TITLE_FILL = "#8A87A8"
 DEFAULT_FOREGROUND = "#EDEDF7"
 DIM_OPACITY = 0.6
 
-# The 16 named colours, tuned to the same palette the picker paints with.
+# The 16 named colours used by captured ANSI transcripts.
 ANSI_16 = [
     "#22212F", "#FF5C7A", "#54E08A", "#FFC857", "#5BA8FF", "#C75CFF", "#46E5E0", "#EDEDF7",
     "#595972", "#FF8098", "#7BE8A6", "#FFD98A", "#8AC2FF", "#D98BFF", "#7BEDE9", "#FFFFFF",
@@ -72,9 +72,8 @@ def colour_256(index: int) -> str:
 
 # --- cell widths ------------------------------------------------------------------------------------------
 
-# The same table the picker's `TextWidth` lays frames out with: one cell per code point, two for the East
-# Asian wide/fullwidth ranges and the wide emoji blocks. Mirroring it exactly is what keeps a captured
-# frame's borders aligned in the SVG.
+# One cell per code point, two for the East Asian wide/fullwidth ranges and the wide emoji blocks.
+# Mirroring the terminal cell model keeps captured frame borders aligned in the SVG.
 WIDE_RANGES = [
     (0x1100, 0x115F), (0x231A, 0x231B), (0x2329, 0x232A), (0x23E9, 0x23EC), (0x23F0, 0x23F0),
     (0x23F3, 0x23F3), (0x25FD, 0x25FE), (0x2614, 0x2615), (0x2648, 0x2653), (0x267F, 0x267F),

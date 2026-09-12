@@ -29,7 +29,7 @@ import scala.annotation.tailrec
 import scala.concurrent.duration.DurationInt
 import scala.concurrent.duration.FiniteDuration
 
-/** Every `core/install` scenario of SPEC §9, through the real engine with in-memory ports. */
+/** Every `core/install` scenario of SPEC §6, through the real engine with in-memory ports. */
 final class FontInstallerSuite extends munit.FunSuite:
   private val workspace = FunFixture[os.Path](_ => os.temp.dir(prefix = "font-installer"), os.remove.all(_))
 

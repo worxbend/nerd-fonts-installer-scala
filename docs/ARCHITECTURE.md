@@ -1,28 +1,23 @@
 # Architecture
 
-Status: covers every module — `core` (foundation packages and the install engine), `config`, `picker`, `cli` and
-`app` — plus the CI scripts and workflows. The behavioural contract is [`SPEC.md`](SPEC.md) (with its
+Status: covers every module — `core` (foundation packages and the install engine), `config`, `cli` and `app` — plus the CI scripts and workflows. The behavioural contract is [`SPEC.md`](SPEC.md) (with its
 implementation notes); the measured comparison with the Go reference is [`PARITY.md`](PARITY.md). This file
 records how the code is shaped and which invariants must never move.
 
 ## Module map
 
 ```
-app -> cli -> { core, config, picker }
+app -> cli -> { core, config }
 config -> core
-picker -> core
 ```
 
 `core` contains the domain, the ports and the install engine. It never imports picocli, fansi or
-terminal code. Root package `io.worxbend.nerdfonts`; packages are named after concepts. The edges are
-`moduleDeps` in `build.mill`; the one test-side addition is `picker.test -> core.test`, so the `stty` adapter
-is tested against the shared `FakeProcessRunner`.
+terminal code. Root package `io.worxbend.nerdfonts`; packages are named after concepts. The edges are `moduleDeps` in `build.mill`.
 
 | Module | Third-party dependencies | Role |
 | --- | --- | --- |
 | `core` | ox, os-lib, upickle (ujson) | Domain values, ports and adapters, release catalogue, install engine |
 | `config` | scala-yaml, upickle | Strict YAML/JSON decoding, defaults, discovery |
-| `picker` | fansi, ox | Pure model and view, `Terminal` port, `stty` adapter, key decoder, spinner |
 | `cli` | picocli, fansi | Process boundary, `Application`, exit codes, event renderer, composition root, generated `BuildInfo` |
 | `app` | — | `Main`, SIGINT handler, native-image reflection config; the `NativeImageModule` |
 
@@ -85,79 +80,22 @@ Test-side helper: `config.ConfigFiles.write(dir, name, text)` (package-private) 
 directory.
 
 
-### `picker` module — `io.worxbend.nerdfonts.picker`
-
-The Go Bubble Tea program rebuilt as three separable layers. The **model** is an immutable case class with a
-pure `update`; the **view** is a pure function from model and `ColourMode` to a `Frame`; the **terminal** is a
-port with one production adapter. Only `PickerSession` touches all three, and it holds no state of its own.
-
-Only `Terminal`, `SttyTerminal`, `PickerSession`, `PickerOutcome`, `PickerError`, `IconMode` and
-`ReleaseLoadingSpinner` are referenced from `cli`/`app`; everything else below is `private[picker]` so that
-boundary is enforced by the compiler rather than by convention (`Frame`, `Viewport`, `RawTerminal` and
-`TerminalStreams` stay public only because the public `Terminal`/`SttyTerminal` signatures mention them).
-
-| Type | Role |
-| --- | --- |
-| `PickerModel.initial(releases, destination, refreshFontCache, iconMode, viewport)` / `update(key)` / `resized(viewport)` / `outcome` (`private[picker]`, private constructor) | The state machine. `PickerStep` (`private[picker]`) is `ChooseRelease`, `ChooseFamilies(release, families: ListState, selected)`, `Done(release, selected)` or `Cancelled`; each step carries exactly its own state, so a family list cannot exist without the release it came from. The release list lives on the model so going back returns to the same cursor and filter. The constructor is private (Scala privates the synthesized `copy` to match), so `initial`'s `require(releases.nonEmpty)` is the only way to reach a model — `copy(releases = Vector.empty)` no longer compiles from outside the class |
-| `PickerKey` | The decoded key vocabulary (`Up … CtrlK`, `Char(c)`); the model never sees bytes |
-| `ListState` (+ `ListItem`, `FilterState`, `FilteredItem`, all `private[picker]`) | bubbles' `list.Model` reduced to pure operations: move/page/first/last, `openFilter`/`typeChar`/`eraseChar`/`applyFilter`, `withItems`, and a scrolling window (`windowStart`/`visibleItems`/`scrolled(pageSize)`) that follows the cursor with the smallest move. `handle(key, pageSize)` is the list's half of the precedence table; while browsing it also binds `Left`/`PgUp` and `Right`/`PgDn` to paging (bubbles' default keymap), and `b` where it is not already claimed as a families-step key |
-| `FuzzyMatcher` (`private[picker]`) | Case-insensitive subsequence match over `title + " " + description + " " + value`, ranked by first position then span, stable for ties; positions are kept so the view can underline them |
-| `PickerOutcome.of(release, selected, destination, refreshFontCache)` | `Cancelled` when nothing is selected, else every stem through `FamilyName.parse` (sorted, first failure wins) → `Selected(InstallConfig)` or `Rejected(ConfigValidationError.InvalidFamily)` |
-| `PickerView.render(model, colours): Frame` (`private[picker]`) | The Go `View()`: banner box, list panel, side panel (wide layouts, only when it fits), help footer, and the done screen. `Layout` (`private[picker]`) owns the budget constants; `ListView` renders a `ListState` into exactly `listHeight` rows; `Box` draws a rounded, padded box of an exact size; `TextWidth` is the cell arithmetic (`displayWidth`, ANSI-aware `truncate`, `fit`, `wrap`) |
-| `Palette` (+ `Colour`, `Styles`, all `private[picker]`) | The neon palette, `brandRamp`, `gradientText`/`gradientRule`/`spread`/`statLine`/`progressBar`/`percentage`; every helper takes the `ColourMode` and returns bare text in `Plain` |
-| `IconMode` (+ `parse`, `IconModeError`), `IconSet` (`private[picker]`; + `forMode`, `iconForFamily`, `logo`), `FamilyHint.of` (`private[picker]`) | The Go icon tables verbatim (as `\u` escapes so the private-use glyphs survive tooling); `auto` resolves to the Unicode set |
-| `Terminal.withRawMode(body: RawTerminal => A): Either[TerminalError, A]`, `RawTerminal` (`size()`, `readKey()`, `write(frame)`), `TerminalError` | The loan-shaped port; raw mode, alternate screen and hidden cursor exist only inside the loan. `Frame` is an opaque `Vector[String]` (one entry per row), `Viewport(width, height)` the terminal size, `TerminalStreams(input, output)` the byte streams the adapter talks to (`TerminalStreams.process` in production) |
-| `SttyTerminal(processRunner, escapeTimeout = 50 ms, streams = TerminalStreams.process)` | The adapter: `stty -g` / `stty raw -echo` / `stty <saved>` through `ProcessRunner` with `Stdin.FromFile(/dev/tty)` and `Stdout.Capture`, never a shell; the restore runs in a `finally` around the raw-mode entry itself, so it fires even if `stty raw -echo` throws (not just if the session body does) and never fires if `stty -g` itself failed; the alternate screen and cursor sequences are emitted only from the success branch; `stty size` per frame with an 80×24 fallback; frames as `ESC[H` + lines joined by `\r\n` (each followed by `ESC[K`) + `ESC[J`, one flushed write |
-| `KeyDecoder(input, escapeTimeout)` (`private[picker]`) | Bytes → `PickerKey` per the §7 table; the byte after `ESC` is read under `timeoutOption`; unknown CSI/SS3 sequences and supplementary code points are consumed and dropped |
-| `StdinSource.stream` (`private[picker]`) | The one `abandonOnInterruptReads(System.in)` in the process |
-| `PickerSession.run(releases, icons, colours, terminal): Either[PickerError, PickerOutcome]` | render → read → update as a tail-recursive loop; `PickerError.NoReleases` before the terminal is touched, `PickerError.Terminal` when raw mode fails; end of input is a cancellation |
-| `ReleaseLoadingSpinner.around(stderr, colours)(load)` | The stderr spinner block: a daemon ticker fork inside a `supervised` scope whose body is `load()`, so the ticker is cancelled and joined before the final line; the line is redrawn with `\r` and space padding, never `ESC[K`; an `InterruptedException` unwinding `supervised` is caught just long enough to end the line with `  interrupted` before being rethrown, so a SIGINT during the load never leaves the cursor mid-spin. Frames are bubbles' `MiniDot` cycle `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏` |
-
-Test-side helpers: `picker.ScriptedTerminal(keys, viewport, rawMode)` (public, reusable from `cli` tests) feeds
-a key script, records every `Frame` and counts raw-mode entries and exits; `picker.Fixtures` (package-private)
-holds two releases, a default model and a key-press helper.
-
-**Key precedence** (independent of filter focus, because the model consumes its keys before the list sees them):
-
-1. `q`, `Ctrl-C` cancel on both steps; `Esc` goes back on the families step and cancels on the release step. `Esc`
-   never clears a filter and `q` cannot be typed into one.
-2. Step keys: release — `Enter` chooses the highlighted (filtered) release; families — `Enter` finishes (no-op with
-   nothing selected), `Space` toggles, `a` selects all / clears all, `b` goes back. None can be typed into the family
-   filter; on the release step `Space` and `a` are ordinary characters, and `b` is a list key (3.) rather than a
-   step key, mirroring bubbles forwarding every key it does not itself consume into the active `list.Model`.
-3. The list: while browsing `Up`/`k`, `Down`/`j`, `PgUp`/`Left`, `PgDn`/`Right` (also `b` on the release step, per
-   bubbles' default keymap), `Home`/`g`, `End`/`G`, `/` (opens the input with the applied text, cursor reset); while
-   editing, printable characters and `Backspace` re-filter live, `Up`/`Down`/`Tab`/`Shift-Tab`/`Ctrl-K`/`Ctrl-J`
-   apply (an empty or match-less pattern clears instead), paging keys are dead, `Enter` never applies.
-
-**Height budget invariant.** `Layout.listHeight = max(9, safeHeight − chrome)` with `chrome = 16` (full banner) or
-`14` (compact, `safeHeight < 26`), floors 48×24, `bodyWidth ≤ 132`, side panel 34 wide from 104 columns. The banner
-box is 9 (or 7) rows, the list panel `listHeight + 4`, plus two separators and the footer — so a rendered frame is
-exactly `safeHeight` rows. `Box` truncates instead of wrapping (every wrapped row would break the budget); the side
-panel is the only wrapped text and is dropped when taller than the list panel. The size matrix test
-(40×10 … 200×60, both steps) asserts height `== safeHeight` and every line `≤ safeWidth` in both colour modes.
-
-**The CRLF rule.** `stty raw` clears `opost`/`onlcr`, so the terminal no longer expands `\n`. Every line break the
-adapter emits while in raw mode is an explicit `\r\n`, produced in one place (`SttyTerminal.framePaint`); a test
-scans every byte written for a `\n` without a preceding `\r`.
-
-
 ### `cli` module — `io.worxbend.nerdfonts.cli`
 
-The Go `main.go` split in two: `Cli` is the process boundary (picocli, `--help`/`--version`, `--icons`, exit codes,
+The Go `main.go` split in two: `Cli` is the process boundary (picocli, `--help`/`--version`, exit codes,
 the interrupt catch) and `Application` is the Go `run` after flag parsing, a function from `CliOptions` and
 `AppDependencies` to `Either[AppFailure, AppOutcome]` that never sees picocli or the argument array.
 
 | Type | Role |
 | --- | --- |
-| `Cli.run(args, out, err, deps): Int` (+ the production overload, which passes `AppDependencies.production(Environment.System, Cli.tempDir(env))` — `$TMPDIR` when non-empty, else `java.io.tmpdir`, made absolute) | Builds the root `CommandLine` (`setStopAtPositional`, `Help.Ansi.OFF`, a programmatic `VersionProvider`) and runs it through a custom `IExecutionStrategy`: validate `--icons` (exit 2 with the Go message) → `CommandLine.executeHelpRequest` (`--help`/`--version`, exit 0) → `Application.run` under `Interruptible` (an escaping `InterruptedException` becomes `AppFailure.Interrupted(BeforeInstall)`) → print the `AppFailure` line → `ExitCode.of`. picocli's own usage errors exit 2 before the strategy runs |
-| `RootCommand` (`private[cli]`, `@Command`) | The one class allowed a `var`: picocli binds every option through an annotated setter into a single `OptionDraft`. Both flag spellings per option, an explicit `order` on each (Go's alphabetical listing, help last), `-h/-help/--help` as `usageHelp`, `-version/--version` as `versionHelp`, a hidden `@Parameters(arity = "0..*")` sink, no mixin; `--icons` stays a raw `String` until `Cli` validates it |
-| `CliOptions(explicitConfig: Option[String], mode: CliMode, dryRun, interactive: Interactive, icons: IconMode)` | The immutable result of parsing; the raw `--config` text survives so `load config <path>` echoes what was typed |
-| `AppDependencies` | Function-typed seams (`loadConfig`, `discoverConfig`, `configCandidates`, `listReleases`, `runPicker`, `installFonts`, `isTerminal`, `expandDestination`) plus `environment` and `colours`. `production(env, tempDir)` is the composition root: `JdkHttpClient`, `GitHubReleaseCatalogue`, `FontInstaller(http, tempDir, FcCacheRefresher(JdkProcessRunner(env)), urls = …)`, `ConfigLoader`/`ConfigDiscovery`/`ConfigLocations`, `PickerSession.run(_, _, _, SttyTerminal(processes))`, `PathExpander`, `OutputStyle.detect(env, TerminalProbe.isTerminal())`. It is also the only reader of the test hook `NERD_FONTS_INSTALLER_BASE_URL` (`AppDependencies.baseUrlVariable`): a non-blank value becomes `ReleaseUrls(Url(base))`, so the CI interrupt smoke can aim the shipped binary at a local stub; blank or unset keeps `ReleaseUrls.github` |
-| `Application` | `run` dispatches on `CliMode`; `printFontNames` (explicit/env/discovered release, else `latest`, never announced), `resolveConfig` (explicit → env → discovered with `Using config <path>` → `startPicker`), `selectRelease` (empty listing is `NoReleases` whatever the selector), `install` (expand the destination, build the `InstallRequest`, run the engine through `ConsoleEventRenderer`). `ResolvedConfig` (`private[cli]`) is `Ready(config)` or `PickerCancelled` |
-| `AppOutcome` | `Installed`, `DryRunPrinted`, `FontNamesPrinted`, `PickerCancelled` — cancellation is a success |
-| `AppFailure` (+ `InterruptPhase`) | One stderr line per case and the only place the operation prefixes live: `Config(cause, rawPath)` → `load config <raw>: `, with `rawPath` also substituted back in for the absolute path `cause.render` would otherwise show (Go never absolutises `--config`/`$NERD_FONTS_INSTALLER_CONFIG` at all, so both the prefix and the wrapped error echo the same raw text; `Application.resolvePath` treats an empty raw path as `NotFound` outright rather than resolving it to the working directory, matching Go's `open : no such file or directory`); `DiscoveredConfig(cause)` → `load discovered config <path>: ` (bare for `NoWorkingDirectory`; no raw-path substitution, since a discovered candidate has no separate raw spelling), `NoConfig(candidates)` → the two hints, `NotATerminal`, `Release`, `Picker`, `UnsafeSelection`/`Destination`/`Install` → `install fonts: `, `Interrupted(Install | BeforeInstall)` |
-| `ExitCode.of` | `Right` → 0; `NoConfig`, `NotATerminal`, `Release(NotFound | NoReleases)` → 2; every other `Left` → 1 |
+| `Cli.run(args, out, err, deps): Int` (+ the production overload, which passes `AppDependencies.production(Environment.System, Cli.tempDir(env))` — `$TMPDIR` when non-empty, else `java.io.tmpdir`, made absolute) | Builds the root `CommandLine` (`setStopAtPositional`, `Help.Ansi.OFF`, a programmatic `VersionProvider`) and runs it through a custom `IExecutionStrategy`: `CommandLine.executeHelpRequest` (`--help`/`--version`, exit 0) → `Application.run` under `Interruptible` (an escaping `InterruptedException` becomes `AppFailure.Interrupted(BeforeInstall)`) → print the `AppFailure` line → `ExitCode.of`. picocli's own usage errors exit 2 before the strategy runs |
+| `RootCommand` (`private[cli]`, `@Command`) | The one class allowed a `var`: picocli binds every option through an annotated setter into a single `OptionDraft`. Both flag spellings per option, an explicit `order` on each (Go's alphabetical listing, help last), `-h/-help/--help` as `usageHelp`, `-version/--version` as `versionHelp`, a hidden `@Parameters(arity = "0..*")` sink, no mixin |
+| `CliOptions(explicitConfig: Option[String], mode: CliMode, dryRun)` | The immutable result of parsing; the raw `--config` text survives so `load config <path>` echoes what was typed |
+| `AppDependencies` | Function-typed seams (`loadConfig`, `discoverConfig`, `configCandidates`, `listReleases`, `installFonts`, `expandDestination`) plus `environment` and `colours`. `production(env, tempDir)` is the composition root: `JdkHttpClient`, `GitHubReleaseCatalogue`, `FontInstaller(http, tempDir, FcCacheRefresher(JdkProcessRunner(env)), urls = …)`, `ConfigLoader`/`ConfigDiscovery`/`ConfigLocations`, `PathExpander`, `OutputStyle.detect(env, TerminalProbe.isTerminal())`. It is also the only reader of the test hook `NERD_FONTS_INSTALLER_BASE_URL` (`AppDependencies.baseUrlVariable`): a non-blank value becomes `ReleaseUrls(Url(base))`, so the CI interrupt smoke can aim the shipped binary at a local stub; blank or unset keeps `ReleaseUrls.github` |
+| `Application` | `run` dispatches on `CliMode`; `printFontNames` (explicit/env/discovered release, else `latest`, never announced), `resolveConfig` (explicit → env → discovered with `Using config <path>` → no-config failure), `selectRelease` (empty listing is `NoReleases` whatever the selector), `install` (expand the destination, build the `InstallRequest`, run the engine through `ConsoleEventRenderer`) |
+| `AppOutcome` | `Installed`, `DryRunPrinted`, `FontNamesPrinted` |
+| `AppFailure` (+ `InterruptPhase`) | One stderr line per case and the only place the operation prefixes live: `Config(cause, rawPath)` → `load config <raw>: `, with `rawPath` also substituted back in for the absolute path `cause.render` would otherwise show (Go never absolutises `--config`/`$NERD_FONTS_INSTALLER_CONFIG` at all, so both the prefix and the wrapped error echo the same raw text; `Application.resolvePath` treats an empty raw path as `NotFound` outright rather than resolving it to the working directory, matching Go's `open : no such file or directory`); `DiscoveredConfig(cause)` → `load discovered config <path>: ` (bare for `NoWorkingDirectory`; no raw-path substitution, since a discovered candidate has no separate raw spelling), `NoConfig(candidates)` → the two hints, `Release`, `Destination`/`Install` → `install fonts: `, `Interrupted(Install | BeforeInstall)` |
+| `ExitCode.of` | `Right` → 0; `NoConfig`, `Release(NotFound | NoReleases)` → 2; every other `Left` → 1 |
 | `OutputStyle.detect(env, consoleAttached)` | `NO_COLOR` and `TERM=dumb` always win; otherwise a console or `CLICOLOR_FORCE`/`FORCE_COLOR` (non-empty, not `0`) enables `Ansi` |
 | `ConsoleEventRenderer(out, err, colours)` | The only `InstallEventSink` in production: exhaustive match over the eight events, plan lines to stdout, everything else to stderr, lipgloss colours 63/42/214/81/39/219 through fansi in `Ansi` only, no locking |
 | `TerminalProbe.isTerminal()` | `Option(System.console()).exists(_.isTerminal)` |
@@ -171,12 +109,11 @@ Test-side helper: `cli.Fakes` (package-private) builds an `AppDependencies` whos
 
 | Situation | Code | Produced by |
 | --- | --- | --- |
-| success, dry run, `--font-names`, picker cancelled | 0 | `ExitCode.of(Right(_))` |
-| `--help`, `--version` | 0 | picocli, inside the execution strategy after `--icons` validation |
+| success, dry run, `--font-names` | 0 | `ExitCode.of(Right(_))` |
+| `--help`, `--version` | 0 | picocli, inside the execution strategy |
 | malformed flag, unknown option, missing option value | 2 | picocli's parameter exception handler |
-| invalid `--icons` | 2 | `Cli.execute` |
-| no config (non-interactive), `--interactive` without a terminal, unknown release tag, no releases | 2 | `ExitCode.of` |
-| everything else: config load/parse/validation, network, filesystem, extraction, checksum, `fc-cache`, unsafe picker selection, interrupt | 1 | `ExitCode.of` |
+| no config, unknown release tag, no releases | 2 | `ExitCode.of` |
+| everything else: config load/parse/validation, network, filesystem, extraction, checksum, `fc-cache`, interrupt | 1 | `ExitCode.of` |
 
 
 ### `app` module — `io.worxbend.nerdfonts.app`
@@ -192,7 +129,7 @@ no entry; the shipped binary's `--help` and `--version` are the runtime proof th
 
 | File | Role |
 | --- | --- |
-| `.github/workflows/checks.yml` | fmt check, scalafix `--check`, compile, tests, then `app.run` from source (`--version`, `--help`, the example dry run) on `ubuntu-24.04` + `macos-15`; a native-image smoke job on linux-amd64 (`--version`, `--help`, `--dry-run`, `--icons bogus` → 2, then the interrupt smoke); actionlint |
+| `.github/workflows/checks.yml` | fmt check, scalafix `--check`, compile, tests, then `app.run` from source (`--version`, `--help`, the example dry run) on `ubuntu-24.04` + `macos-15`; a native-image smoke job on linux-amd64 (`--version`, `--help`, `--dry-run`, then the interrupt smoke); actionlint |
 | `.github/workflows/release.yml` | Four native images on per-target runners (`ubuntu-24.04`, `ubuntu-24.04-arm`, `macos-15-intel`, `macos-15`), tests on each, tar.gz + sha256 per target, `checksums.txt` + `install.sh` attached, a GitHub Release on `v*` tags (or a `workflow_dispatch` naming an existing tag) and a moving `latest` pre-release refreshed on every push to `main` |
 | `.github/dependabot.yml` | Weekly grouped updates for GitHub Actions only; library versions are pinned by hand in `build.mill` |
 | `scripts/ci/interrupt-smoke.sh <binary>` | §6.8 end to end against the real binary: a Python stub answers the manifest with 404 and streams an endless `/latest/download/Hack.zip`; the binary runs with `NERD_FONTS_INSTALLER_BASE_URL` and `TMPDIR` pointed at a scratch directory, receives SIGINT one second in, and must exit 1 with `install fonts: interrupted`, leaving no `nerd-font-*.zip`, no `.Hack-*` and no `Hack` directory. Runs under `set -m` so the background binary is not started with SIGINT ignored |
@@ -208,12 +145,11 @@ The Go reference is the contract; this code reproduces its exit codes, operation
 discovery, output formats, install layout and atomic-replace semantics. [`PARITY.md`](PARITY.md) is the
 measured comparison: both binaries were run with identical arguments and environment and their streams
 diffed, scenario by scenario, with the verdict per row. The deviations kept on purpose are listed there
-and in [`SPEC.md`](SPEC.md) §11; the ones a user can notice are `--help` to stdout with exit 0, parser
-wording for a malformed command line and for an unknown YAML key, a second SIGINT halting with 130, and the
-picker's `h/l/f/d/u` aliases being unbound. Structurally the two differ where the languages do: Go's
-`errgroup` is an Ox `supervised` scope with a `Flow` fan-out and one private exception; Go's `context`
-cancellation is thread interruption; Bubble Tea's program is a pure `PickerModel` behind a `Terminal` loan;
-Go's `flag` is picocli with both dash spellings declared per option.
+and in [`SPEC.md`](SPEC.md) §10; the ones a user can notice are `--help` to stdout with exit 0, parser
+wording for a malformed command line and for an unknown YAML key, the removed terminal selection feature, and a
+second SIGINT halting with 130. Structurally the two differ where the languages do: Go's `errgroup` is an Ox
+`supervised` scope with a `Flow` fan-out and one private exception; Go's `context` cancellation is thread
+interruption; Go's `flag` is picocli with both dash spellings declared per option.
 
 ## Invariants
 
@@ -221,7 +157,7 @@ Go's `flag` is picocli with both dash spellings declared per option.
    empty string, `.`, `..`, any `/` or `\`, NUL, absolute paths and anything whose base name differs from
    itself, with the Go messages verbatim. Every family name touches a path or a URL only as a `FamilyName`.
    `Release.families` is deliberately `Vector[String]`: raw upstream asset stems are display data, and the
-   conversion happens exactly once, where a selection becomes an `InstallConfig` (config loader, picker).
+   conversion happens exactly once, where a selection becomes an `InstallConfig`.
 2. **Every body is capped.** `HttpClient.get` is loan-shaped; bodies are never materialised by the port and
    always flow through `BoundedInputStream`. `ResponseDelivery` is the one implementation of the response
    discipline (non-2xx and oversize `Content-Length` refused before `consume`, body closed on every path,
@@ -251,7 +187,7 @@ Go's `flag` is picocli with both dash spellings declared per option.
    candidate go through `ConfigLoader.load`; defaults and validation are applied exactly once, in
    `ConfigDocument.validated`, whichever format produced the document. Decoders never see defaults.
 10. **Discovery skips only `NotFound`.** A candidate that exists but cannot be read, parsed or validated is
-    returned as the error, never skipped and never a reason to start the picker (Go: `errors.Is(err, os.ErrNotExist)`).
+    returned as the error, never skipped (Go: `errors.Is(err, os.ErrNotExist)`).
 11. **Strict keys in both formats.** An unknown key, a repeated YAML key or a value of the wrong shape fails the
     load with the field named; nothing is coerced except the documented YAML scalar rules.
 12. **Installs are staged, then renamed.** A family is extracted into `<root>/.<Family>-<random>` and becomes
@@ -280,40 +216,24 @@ Go's `flag` is picocli with both dash spellings declared per option.
     case-insensitive) and flattened to their base name, so a path inside the zip never decides where a byte
     lands; the declared size is refused before inflating, the stream is capped at `fontFile + 1`, the total
     at `archive`; every file is fsynced and closed explicitly; zero font files is an error.
-18. **Picker output crosses the `FamilyName` boundary exactly once**, in `PickerOutcome.of`. Stems are display
-    data until then; an unsafe stem is `Rejected`, never a path.
-19. **The picker model is pure and the terminal is a loan.** `PickerModel.update` is a total function of model and
-    key; `Terminal.withRawMode` restores `stty` settings, the alternate screen and the cursor in a `finally`, so an
-    interrupt unwinding through a read leaves the terminal usable. The restore is wrapped around raw-mode entry
-    itself, not just the session body, so an interrupt landing inside `stty raw -echo`'s `Process.waitFor()` —
-    after the child has already applied the termios change — still restores the saved settings; it never fires if
-    `stty -g` itself failed, since nothing was changed. Nothing in `picker` reads `System.in` except
-    `StdinSource`, once.
-20. **Frames fit.** `PickerView.render` never yields more than `safeHeight` rows or a line wider than `safeWidth`;
-    any new banner row or panel must be paid for in `Layout`'s chrome constants.
-21. **Plain means plain.** With `ColourMode.Plain` no picker or spinner output contains `ESC[`; the alternate-screen,
-    cursor and clear sequences are the terminal adapter's, emitted in raw mode only.
-22. **Upstream text is sanitised before it reaches a terminal, in every colour mode.** `FamilyName.parse`
+18. **Upstream text is sanitised before it reaches a terminal, in every colour mode.** `FamilyName.parse`
     deliberately allows control characters, and a release tag, family stem or zip entry name is untrusted text
     that may reach a display before (or without ever passing through) any validation. `TerminalSafe.sanitize`
     (`core`, package `io.worxbend.nerdfonts`) replaces every C0 control character, `DEL` and the C1 range
-    one-for-one with `?` — length-preserving, so the picker's fuzzy-match positions still line up. It runs in
-    `ConsoleEventRenderer.paint` (both colour modes, ahead of `fansi`), in `ArchiveError`/`ArchiveEntryError.render`
-    for every embedded entry name, and in `PickerModel.familyItems`/`releaseItem` for the row `title`/`description`
-    text (never for `value`, which stays the exact stem the release published, for correct selection and
-    `FamilyName.parse` later).
-23. **`AppFailure.render` is the only place the top-level `load config`/`load discovered config`/`install fonts`
+    one-for-one with `?` — length-preserving for callers that track display positions. It runs in
+    `ConsoleEventRenderer.paint` (both colour modes, ahead of `fansi`) and in `ArchiveError`/`ArchiveEntryError.render`
+    for every embedded entry name.
+19. **`AppFailure.render` is the only place the top-level `load config`/`load discovered config`/`install fonts`
     wording is added — the ADTs it wraps may already carry a prefix of their own.** `load config <path>: `,
     `load discovered config <path>: ` and `install fonts: ` are spelled once, in `cli`, so the same `ConfigError`
-    reads differently depending on how the file was chosen. `Release`/`Picker` add no prefix at all: `cause.render`
-    is used verbatim. But `ReleaseError`, `PathError` and `ConfigError` are themselves already user-facing,
+    reads differently depending on how the file was chosen. `Release` adds no prefix at all: `cause.render` is used verbatim. But `ReleaseError`, `PathError` and `ConfigError` are themselves already user-facing,
     Go-style wrappers one level down and do embed an operation prefix for the step *they* represent —
     `list Nerd Fonts releases: `, `locate current directory: `, `open <path>: `/`read <path>: `/`parse <path>: ` —
     so a rendered line can carry two prefixes chained together (e.g. `load config <path>: open <path>: no such
     file or directory`), not just `AppFailure`'s own.
-24. **Exit codes come from `ExitCode.of` or from picocli, nowhere else.** `Application` returns values; no step
+20. **Exit codes come from `ExitCode.of` or from picocli, nowhere else.** `Application` returns values; no step
     chooses a number. The union of the two sources is the exit-code table above.
-25. **`Application` never sees the argument array.** picocli types stop at `Cli`; everything below receives
+21. **`Application` never sees the argument array.** picocli types stop at `Cli`; everything below receives
     `CliOptions` and `AppDependencies`, which is what makes every §9 `cli` scenario a test on writers and an `Int`.
 
 ## Conventions that reviewers enforce
@@ -387,8 +307,6 @@ one concern per function; scaladoc on public types explains why, not what.
 - **`Cleanup` is best effort by design.** Removing the temp zip, the staging directory and a committed swap's
   `.old` swallows non-fatal exceptions only, so an interrupt still propagates while a leftover can never mask
   the real error or fail a successful install.
-- **`PickerStep.Cancelled` is a fourth step, not a flag.** The spec lists three steps; a terminal `Cancelled` case lets
-  `update` ignore every key after the end without a separate boolean and makes `outcome` a plain `match`.
 - **The list window scrolls; the page indicator counts pages.** `ListState` keeps a window offset that follows the
   cursor by the smallest move (one row per `j`/`k`), which reads better than bubbles' page flips; the pagination row
   shows the cursor's page (`●○○`, or `p/N` above ten pages) as a position indicator.
@@ -396,54 +314,35 @@ one concern per function; scaladoc on public types explains why, not what.
   tool only holds by luck of its copy lengths; the side-panel note is wrapped explicitly, everything else is cut.
 - **`KeyDecoder.Char` is a BMP `Char`.** A supplementary code point (emoji) is dropped rather than split into
   surrogates; family names and filter text never need one.
-- **Unknown escape sequences are consumed whole.** A modified arrow (`ESC [ 1 ; 5 A`) is read to its final byte and
-  dropped, so its parameter bytes cannot leak into the filter as text.
-- **The spinner pads with spaces instead of `ESC[K`.** Keeps `Plain` output free of control sequences and makes the
-  final line testable as text.
-- **`picker.test` depends on `core.test`** (build.mill) so `SttyTerminal` is tested against the shared
-  `FakeProcessRunner` rather than a second fake.
-- **Go's `h/l/f/d/u` paging aliases are not bound** (§7 deviation, kept): `h`/`l` would collide with typing and the
-  remaining aliases add nothing over `PgUp`/`PgDn`.
 - **`--help` goes to stdout and exits 0.** Go's `flag` prints usage to stderr and exits 2 only because that is what
   the stdlib does on `-h`; it is not a behaviour anyone scripts against, and `--help | less` is. This is the one
   deliberate departure in the flag surface; `-h`, `-help` and `--help` are all accepted, and there is no `-V`.
 - **The exit-code table is the union of picocli's and `ExitCode.of`.** picocli produces 2 for a malformed command
   line and 0 for `--help`/`--version` inside `CommandLine.execute`; every other code is `ExitCode.of` mirroring Go's
   `exitCodeFor` (only `errNoConfig`, `ErrNoReleases` and `ReleaseNotFoundError` are 2). The constants are picocli's
-  `ExitCode.OK/SOFTWARE/USAGE` so the two sources cannot drift. An invalid `--icons` is 2 from `Cli`, checked before
-  `--version` is honoured, because Go validates it right after parsing.
+  `ExitCode.OK/SOFTWARE/USAGE` so the two sources cannot drift.
 - **`RootCommand` holds the codebase's one class-level `var`.** picocli binds options by invoking annotated setters
   on an instance it reads reflectively, so some mutable slot is unavoidable. It is a single `private var` holding an
-  immutable `OptionDraft` that setters `copy`, the class exposes only `rawIcons` and `options(icons)`, and nothing
-  else in the codebase may hold a `var` field (scalafix `DisableSyntax.noVars`, suppressed on exactly this class).
-- **A custom `IExecutionStrategy` instead of `Callable`.** picocli's `RunLast` honours `--help`/`--version` before
-  the user object runs, which would let `--version --icons bogus` exit 0. The strategy validates `--icons`, then
-  calls `executeHelpRequest`, then the application. It is also the only frame that can catch an interrupt: whatever
-  the strategy throws, `CommandLine.execute` catches, prints as a stack trace and turns into 1, so the catch cannot
-  sit around `execute`.
+  immutable `OptionDraft` that setters `copy`, the class exposes only `options()`, and nothing else in the
+  codebase may hold a `var` field (scalafix `DisableSyntax.noVars`, suppressed on exactly this class).
+- **A custom `IExecutionStrategy` instead of `Callable`.** The strategy calls `executeHelpRequest`, then the
+  application. It is also the only frame that can catch an interrupt: whatever the strategy throws,
+  `CommandLine.execute` catches, prints as a stack trace and turns into 1, so the catch cannot sit around
+  `execute`.
 - **SIGINT is an interrupt of the main thread, not the JVM default.** The JVM's default handler exits 130 without
   unwinding `finally` (native-image is simply killed), which would leak `nerd-font-*.zip` files and `.<Family>-*`
   staging directories. `Main` installs `sun.misc.Signal.handle(INT)` → `mainThread.interrupt()`, so Ox scopes
-  unwind, every cleanup runs, `SttyTerminal` restores the terminal and the process exits 1 through `Cli` with
+  unwind, every cleanup runs and the process exits 1 through `Cli` with
   `install fonts: interrupted` (or `interrupted` before the install) — Go's cancelled context. A second SIGINT
   `Runtime.halt(130)`s: the one escape hatch Go does not offer, for a cleanup that itself hangs. The interrupt
   flag is left cleared after the catch; nothing blocking runs after it.
-- **`TerminalProbe` is `System.console().isTerminal`, no subprocess and no JNI.** On the JDK 25 toolchain the default
-  console provider returns a console only when both stdin and stdout are TTYs — the same condition Go checks with
-  `ModeCharDevice` on both streams — and `isTerminal` (JDK 22+) confirms it under native-image. `stty` or `isatty`
-  through a subprocess would cost a fork on every start and behave differently on macOS. The consequence is
-  accepted: `--interactive` with a redirected stdin is refused, exactly as in Go.
 - **`AppDependencies` is a case class of functions, not a set of port traits.** Each seam has one call site and the
-  tests replace one at a time with a lambda (`deps().copy(listReleases = …)`); `runPicker` in particular hides the
-  `Terminal`, so no raw-mode adapter ever crosses into a CLI test. `environment` and `colours` ride along because
-  the config variable, path expansion and every renderer need them and nothing below the composition root may read
-  `sys.env`.
+  tests replace one at a time with a lambda (`deps().copy(listReleases = …)`). `environment` and `colours`
+  ride along because the config variable, path expansion and every renderer need them and nothing below the
+  composition root may read `sys.env`.
 - **`InterruptPhase` is carried on the failure, not decided by the caller.** Only `Application.install` knows an
   interrupt landed inside the engine, and Go reports that case with the `install fonts: ` prefix; catching once in
   `install` and once in the strategy keeps both messages exact without threading a phase through every step.
-- **`ReleaseLoadingSpinner` is invoked by `Application`, not by `PickerSession`.** Go's `tui.LoadReleases` runs
-  before the Bubble Tea program starts and the picker itself never performs network IO; keeping the spinner in the
-  cli flow means a listing failure surfaces as `AppFailure.Release` with the same exit code as on `--font-names`.
 - **The image builder runs with `-Dsun.misc.unsafe.memory.access=allow`.** JDK 25 warns on stderr the first time
   each class calls a deprecated `sun.misc.Unsafe` memory-access method, and `scala.runtime.LazyVals$` does on every
   start. The policy is a `static final` of `sun.misc.Unsafe`, read from the VM's saved startup properties when the

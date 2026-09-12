@@ -5,8 +5,8 @@ package io.worxbend.nerdfonts.fonts
  *
  * This is the one path-traversal guard in the application: a family name is joined onto the destination
  * directory and onto the download URL, so every name must pass [[FamilyName.parse]] before it reaches the
- * filesystem or the network. Both the config loader and the picker validate through this type, so the guard
- * cannot drift between the two entry points.
+ * filesystem or the network. The config loader validates through this type, so unsafe names cannot cross into
+ * installation.
  */
 opaque type FamilyName = String
 

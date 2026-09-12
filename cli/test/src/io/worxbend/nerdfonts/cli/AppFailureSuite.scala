@@ -4,12 +4,10 @@ import io.worxbend.nerdfonts.cli.Fakes.*
 import io.worxbend.nerdfonts.config.ConfigError
 import io.worxbend.nerdfonts.environment.EnvironmentError
 import io.worxbend.nerdfonts.environment.PathError
-import io.worxbend.nerdfonts.fonts.ConfigValidationError
-import io.worxbend.nerdfonts.fonts.FamilyNameError
 import io.worxbend.nerdfonts.install.InstallError
 import io.worxbend.nerdfonts.releases.ReleaseError
 
-/** The message shapes of §4, §7 and §8 that only the CLI adds. */
+/** The message shapes of §4–§7 that only the CLI adds. */
 final class AppFailureSuite extends munit.FunSuite:
   private val path = cwd / "nerd-fonts-installer.yaml"
 
@@ -47,20 +45,8 @@ final class AppFailureSuite extends munit.FunSuite:
       "no config found; pass --config or set NERD_FONTS_INSTALLER_CONFIG",
     )
 
-  test("--interactive without a terminal"):
-    assertEquals(
-      AppFailure.NotATerminal.render,
-      "no config found; --interactive requires stdin and stdout terminals",
-    )
-
   test("release errors render bare"):
     assertEquals(AppFailure.Release(ReleaseError.NoReleases).render, "no Nerd Fonts releases found")
-
-  test("an unsafe picker selection carries the install prefix"):
-    assertEquals(
-      AppFailure.UnsafeSelection(ConfigValidationError.InvalidFamily(FamilyNameError.Unsafe("../x"))).render,
-      "install fonts: unsafe font family name \"../x\"",
-    )
 
   test("a destination failure carries the install prefix"):
     assertEquals(AppFailure.Destination(PathError.NoHome).render, "install fonts: $HOME is not defined")

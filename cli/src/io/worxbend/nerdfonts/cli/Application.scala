@@ -9,9 +9,6 @@ import io.worxbend.nerdfonts.fonts.InstallConfig
 import io.worxbend.nerdfonts.fonts.ReleaseSelector
 import io.worxbend.nerdfonts.install.InstallEventSink
 import io.worxbend.nerdfonts.install.InstallRequest
-import io.worxbend.nerdfonts.picker.IconMode
-import io.worxbend.nerdfonts.picker.PickerOutcome
-import io.worxbend.nerdfonts.picker.ReleaseLoadingSpinner
 import io.worxbend.nerdfonts.releases.Release
 import io.worxbend.nerdfonts.releases.ReleaseError
 import io.worxbend.nerdfonts.releases.ReleaseSelection
@@ -23,12 +20,12 @@ import ox.either
 import ox.either.ok
 
 /**
- * The Go `run` after flag parsing: resolve a config (explicit → env → discovered → picker), or print the font
+ * The Go `run` after flag parsing: resolve a config (explicit → env → discovered), or print the font
  * names, then install. Sees only `CliOptions` and `AppDependencies`, never picocli or the argument array, so
  * every path is a unit test on an `Either` value.
  *
  * `--font-names` and the install path share the same explicit/env/discovered lookup but differ in what they
- * do when nothing is found (fall back to `latest` versus start the picker) and in whether `Using config` is
+ * do when nothing is found (fall back to `latest` versus fail) and in whether `Using config` is
  * announced, which is why the lookup is split into steps rather than shared as one function.
  */
 object Application:
@@ -39,9 +36,8 @@ object Application:
       err: PrintWriter,
   ): Either[AppFailure, AppOutcome] = options.mode match
     case CliMode.FontNames => printFontNames(options, deps, out)
-    case CliMode.Install   => resolveConfig(options, deps, err).flatMap:
-        case ResolvedConfig.PickerCancelled => Right(AppOutcome.PickerCancelled)
-        case ResolvedConfig.Ready(config)   => install(config, options.dryRun, deps, out, err)
+    case CliMode.Install   =>
+      resolveConfig(options, deps, err).flatMap(install(_, options.dryRun, deps, out, err))
 
   private[cli] def printFontNames(
       options: CliOptions,
@@ -79,13 +75,13 @@ object Application:
       options: CliOptions,
       deps: AppDependencies,
       err: PrintWriter,
-  ): Either[AppFailure, ResolvedConfig] = explicitPath(options, deps.environment) match
-    case Some(raw) => loadExplicit(raw, deps).map(ResolvedConfig.Ready(_))
+  ): Either[AppFailure, InstallConfig] = explicitPath(options, deps.environment) match
+    case Some(raw) => loadExplicit(raw, deps)
     case None      => discover(deps).flatMap:
         case Some(found) =>
           err.println(s"Using config ${found.path}")
-          Right(ResolvedConfig.Ready(found.config))
-        case None        => startPicker(options, deps, err)
+          Right(found.config)
+        case None        => Left(AppFailure.NoConfig(deps.configCandidates()))
 
   // The flag wins over the variable; a blank variable falls through to discovery (Go `effectiveConfigPath`).
   private def explicitPath(options: CliOptions, env: Environment): Option[String] = options.explicitConfig
@@ -114,34 +110,6 @@ object Application:
   private def discover(deps: AppDependencies): Either[AppFailure, Option[DiscoveredConfig]] =
     deps.discoverConfig().left.map(AppFailure.DiscoveredConfig(_))
 
-  private def startPicker(
-      options: CliOptions,
-      deps: AppDependencies,
-      err: PrintWriter,
-  ): Either[AppFailure, ResolvedConfig] = options.interactive match
-    case Interactive.NotRequested                    => Left(AppFailure.NoConfig(deps.configCandidates()))
-    case Interactive.Requested if !deps.isTerminal() => Left(AppFailure.NotATerminal)
-    case Interactive.Requested                       => runInteractively(options.icons, deps, err)
-
-  private def runInteractively(
-      icons: IconMode,
-      deps: AppDependencies,
-      err: PrintWriter,
-  ): Either[AppFailure, ResolvedConfig] = either:
-    err.println("No config found. Starting interactive mode...")
-    val releases = ReleaseLoadingSpinner
-      .around(err, deps.colours)(deps.listReleases)
-      .left
-      .map(AppFailure.Release(_))
-      .ok()
-    val outcome  = deps.runPicker(releases, icons, deps.colours).left.map(AppFailure.Picker(_)).ok()
-    resolved(outcome).ok()
-
-  private def resolved(outcome: PickerOutcome): Either[AppFailure, ResolvedConfig] = outcome match
-    case PickerOutcome.Cancelled        => Right(ResolvedConfig.PickerCancelled)
-    case PickerOutcome.Rejected(cause)  => Left(AppFailure.UnsafeSelection(cause))
-    case PickerOutcome.Selected(config) => Right(ResolvedConfig.Ready(config))
-
   private[cli] def install(
       config: InstallConfig,
       dryRun: DryRun,
@@ -166,11 +134,3 @@ object Application:
   ): Either[AppFailure, Unit] = Interruptible.run(deps.installFonts(request, sink)) match
     case Left(_)       => Left(AppFailure.Interrupted(InterruptPhase.Install))
     case Right(result) => result.left.map(AppFailure.Install(_))
-
-/**
- * How config resolution ended: a config to install, or a picker the user left. A distinct type rather than
- * `Option` because "cancelled" is a positive outcome (exit 0) and not the absence of a config.
- */
-private[cli] enum ResolvedConfig:
-  case Ready(config: InstallConfig)
-  case PickerCancelled

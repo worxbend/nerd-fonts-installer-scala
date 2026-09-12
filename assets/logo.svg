@@ -36,7 +36,7 @@
   </g>
   <rect x="10" y="10" width="108" height="108" rx="24" fill="none" stroke="url(#ring)" stroke-width="4"/>
 
-  <!-- the glyph: the four-pointed star of the picker's wordmark -->
+  <!-- the glyph: the four-pointed star of the wordmark -->
   <path d="M64 22Q70 51 98 56Q70 61 64 90Q58 61 30 56Q58 51 64 22Z" fill="url(#star)"/>
   <circle cx="64" cy="56" r="4" fill="#13131F"/>
   <circle cx="64" cy="56" r="2" fill="#EDEDF7"/>

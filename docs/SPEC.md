@@ -10,15 +10,13 @@ A Scala 3 re-implementation of [`worxbend/nerd-fonts-installer`](https://github.
 (Go) with identical user-facing behaviour, shipped as a GraalVM native binary for Linux (amd64, arm64)
 and macOS (amd64, arm64).
 
-The tool installs [Nerd Fonts](https://github.com/ryanoasis/nerd-fonts) from a declarative config file
-or an interactive terminal picker: resolve a release, download one zip per font family from GitHub,
+The tool installs [Nerd Fonts](https://github.com/ryanoasis/nerd-fonts) from a declarative config file: resolve a release, download one zip per font family from GitHub,
 verify it against the release's `SHA-256.txt`, extract only font files into `<destination>/<Family>/`
 atomically, optionally run `fc-cache`.
 
 Parity targets (byte-for-byte where output is machine-readable; same wording elsewhere):
 
-- Flags: `--config <path>`, `--dry-run`, `--font-names`, `--interactive`, `--icons <auto|nerd|unicode|ascii>`,
-  `--version`, `-h/--help`. Every flag is also accepted with a single dash (`-config`, `-dry-run`, …), as Go's
+- Flags: `--config <path>`, `--dry-run`, `--font-names`, `--version`, `-h/--help`. Every flag is also accepted with a single dash (`-config`, `-dry-run`, …), as Go's
   `flag` package does. Deliberate deviation: `--help` prints usage to **stdout** and exits **0** (Go's `flag`
   prints to stderr and exits 2 only as a stdlib artefact).
 - `--font-names` stdout format:
@@ -28,8 +26,7 @@ Parity targets (byte-for-byte where output is machine-readable; same wording els
     - 0xProto
     - 3270
   ```
-- Exit codes: `0` success **or user cancelled the picker**; `2` user-correctable input (malformed flags, invalid
-  `--icons`, no config found, `--interactive` without a terminal, unknown release tag, no releases at all);
+- Exit codes: `0` success; `2` user-correctable input (malformed flags, no config found, unknown release tag, no releases at all);
   `1` everything else, **including config load/parse/validation errors** (explicit `--config`,
   `$NERD_FONTS_INSTALLER_CONFIG`, or a discovered candidate that exists but fails to load), network, filesystem,
   extraction, checksum mismatch, `fc-cache` failure, interruption. This mirrors Go's `exitCodeFor`, which maps
@@ -42,7 +39,7 @@ Parity targets (byte-for-byte where output is machine-readable; same wording els
 | Concern | Choice |
 | --- | --- |
 | Language / build | Scala 3.8.4, Mill 1.1.7 (`./mill`). JVM toolchain `graalvm-community:25.0.1` fetched by Mill (`jvmVersion` on every module, so `app.nativeImage` finds `native-image` without `GRAALVM_HOME`). Bytecode/API target = the toolchain (25): nothing ships as a JVM jar, so JDK 22+ APIs such as `Console.isTerminal` are available |
-| Concurrency | Ox 1.0.6 (`Flow.mapParUnordered`, `supervised`, `Actor`, `timeoutEither`, `timeoutOption`, `abandonOnInterruptReads`) — direct style, no Futures |
+| Concurrency | Ox 1.0.6 (`Flow.mapParUnordered`, `supervised`, `Actor`, `timeoutEither`) — direct style, no Futures |
 | CLI | picocli 4.7.7 (reflection config maintained by hand in `app/resources/META-INF/native-image/...` and asserted by a test) |
 | YAML / JSON | `org.virtuslab::scala-yaml` (AST only) and `ujson` (AST only). No derivation, no reflection |
 | Filesystem | `os-lib` for paths and IO; `java.util.zip.ZipInputStream` for archives |
@@ -57,17 +54,16 @@ Coding rules (from the direct-style Scala skill and Refactoring Guru; enforced i
 - Braceless Scala 3 syntax everywhere. Explicit return types on every public member.
 - Every top-level type declares intentional visibility: public API, `private[<pkg>]`, or `private[nerdfonts]`.
 - Domain values are opaque types or enums, never raw `String`/`Boolean` (`FamilyName`, `ReleaseTag`,
-  `ReleaseSelector`, `IconMode`, `DryRun`, `RefreshFontCache`, `ByteLimit`, `Sha256Digest`, `ColourMode`).
+  `ReleaseSelector`, `DryRun`, `RefreshFontCache`, `ByteLimit`, `Sha256Digest`, `ColourMode`).
   The one sanctioned raw `String` is `Release.families` (§5): untrusted upstream asset stems shown verbatim.
 - Recoverable failures are `Either[E, A]` with sealed error ADTs per concern. Exceptions cross a boundary only as
   defects, as `InterruptedException` (§6.8), or as the internal cancellation signal of §6.5.
 - No class-level `var`. The single exception is picocli option binding: one `private[cli]` annotated command
   class whose option fields carry `@SuppressWarnings(Array("scalafix:DisableSyntax.var"))` with a one-line reason;
-  the class does nothing but collect values into an immutable `CliOptions`. State machines (the picker model) are
-  immutable case classes with pure `update` functions; local `var`s inside a method body are acceptable only for
+  the class does nothing but collect values into an immutable `CliOptions`. Local `var`s inside a method body are acceptable only for
   a fold the compiler cannot express more clearly, and never with `while` (use `@tailrec` recursion or
   `Iterator`/`repeatWhile`).
-- Side effects live behind small port traits (`HttpClient`, `FontCacheRefresher`, `Terminal`, `Environment`,
+- Side effects live behind small port traits (`HttpClient`, `FontCacheRefresher`, `Environment`,
   `ProcessRunner`, `InstallEventSink`), with in-memory fakes in tests.
 - Functions do one thing; orchestration reads as a sequence of named steps. Prefer `either:` blocks with
   `.ok()` over nested `flatMap` chains when three or more steps compose.
@@ -79,9 +75,8 @@ Coding rules (from the direct-style Scala skill and Refactoring Guru; enforced i
 Mill modules and their allowed dependency edges (enforced by `moduleDeps`):
 
 ```
-app -> cli -> { core, config, picker }
+app -> cli -> { core, config }
 config -> core
-picker -> core
 ```
 
 Root package: `io.worxbend.nerdfonts`. Packages are named after concepts.
@@ -111,52 +106,29 @@ counterpart of Go's `config.Source`), `ConfigLocations.candidates(env): Either[C
 `load config <path>: ` / `load discovered config <path>: ` prefixes (§4). No origin marker is carried on
 `InstallConfig`: the branch taken in `Application.resolveConfig` decides whether `Using config <path>` is printed.
 
-### 3.3 `picker` module — `io.worxbend.nerdfonts.picker`
-
-`PickerModel` (immutable state machine), `PickerStep` (`ChooseRelease`, `ChooseFamilies`, `Done`), `PickerKey`
-(decoded key events: `Up, Down, Left, Right, PageUp, PageDown, Home, End, Tab, ShiftTab, Enter, Escape, Space,
-Backspace, CtrlC, CtrlJ, CtrlK, Char(c)`), `ListState` (immutable filterable, scrollable list), `PickerView`
-(renders a `Frame` = `Vector[String]` for a `Viewport(width, height)` and a `ColourMode`), `IconMode` enum +
-`IconSet` (icon tables copied verbatim from the Go `icons.go`), `FamilyHint.of(family: String): String` (pure,
-copied from Go `familyHint`: lower-case the name, first match wins — contains `mono` → `monospace favorite`,
-`code` → `coding ligatures`, `symbol` → `glyph toolkit`, else `Nerd Font patched`), `Palette` (neon palette,
-`brandRamp`, gradient helpers; every helper takes the `ColourMode` and returns unstyled text when `Plain`),
-`Terminal` port (`withRawMode[A](body: RawTerminal => A): Either[TerminalError, A]` where `RawTerminal` has
-`size(): Viewport`, `readKey(): Option[PickerKey]` (`None` on EOF), `write(frame: Frame): Unit`), `SttyTerminal`
-adapter (§7), `KeyDecoder` (bytes → `PickerKey`, §7), `StdinSource` (the single process-wide
-`abandonOnInterruptReads(System.in)`), `PickerSession.run(releases: Vector[Release], icons: IconMode,
-colours: ColourMode, terminal: Terminal): Either[PickerError, PickerOutcome]` (drives the model ↔ terminal loop;
-`releases.nonEmpty` is a precondition — `PickerError.NoReleases` otherwise), `PickerOutcome`
-(`Selected(InstallConfig) \| Rejected(ConfigValidationError) \| Cancelled`),
-`ReleaseLoadingSpinner.around[A](stderr: java.io.Writer, colours: ColourMode)(load: () => Either[ReleaseError, A]): Either[ReleaseError, A]`
-(§7; lives here like Go's `tui.LoadReleases` but is invoked by `cli`, never by `PickerSession`).
-
-### 3.4 `cli` module — `io.worxbend.nerdfonts.cli`
+### 3.3 `cli` module — `io.worxbend.nerdfonts.cli`
 
 - `Cli` — the process boundary: builds the picocli root command, owns `-h/--help`, `--version`, picocli usage
-  errors and `--icons` validation, turns parsed flags into an immutable `CliOptions`, calls `Application.run`,
+  errors, turns parsed flags into an immutable `CliOptions`, calls `Application.run`,
   and returns `ExitCode.of(result)`. Signature
   `Cli.run(args: Array[String], out: PrintWriter, err: PrintWriter, deps: AppDependencies): Int`; the production
   overload builds `AppDependencies.production(...)`.
-- `CliOptions(explicitConfig: Option[String], mode: CliMode, dryRun: DryRun, interactive: Interactive, icons: IconMode)`
-  with `enum CliMode { FontNames, Install }` and `enum Interactive { Requested, NotRequested }`. The raw
-  `--config` string is kept (Go treats `--config ""` as explicit and echoes the raw path).
+- `CliOptions(explicitConfig: Option[String], mode: CliMode, dryRun: DryRun)`
+  with `enum CliMode { FontNames, Install }`. The raw `--config` string is kept (Go treats `--config ""`
+  as explicit and echoes the raw path).
 - `AppDependencies` — function-typed seams (the Go `dependencies` struct): `loadConfig: os.Path => Either[ConfigError, InstallConfig]`,
   `discoverConfig: () => Either[ConfigError, Option[DiscoveredConfig]]`, `configCandidates: () => Vector[os.Path]`,
-  `listReleases: () => Either[ReleaseError, Vector[Release]]`, `runPicker: (Vector[Release], IconMode, ColourMode) => Either[PickerError, PickerOutcome]`,
-  `installFonts: (InstallRequest, InstallEventSink) => Either[InstallError, Unit]`, `isTerminal: () => Boolean`,
-  `expandDestination: DestinationPath => Either[PathError, os.Path]`. Production binds `runPicker` to
-  `PickerSession.run(_, _, _, SttyTerminal(processRunner))`; tests substitute pure functions so no `Terminal`
-  crosses the seam.
+  `listReleases: () => Either[ReleaseError, Vector[Release]]`,
+  `installFonts: (InstallRequest, InstallEventSink) => Either[InstallError, Unit]`,
+  `expandDestination: DestinationPath => Either[PathError, os.Path]`. Tests substitute pure functions at each seam.
 - `Application.run(options: CliOptions, deps: AppDependencies, out: PrintWriter, err: PrintWriter): Either[AppFailure, AppOutcome]`
   composed of `resolveConfig`, `printFontNames`, `selectRelease`, `install`; never sees `args` or picocli.
-- `enum AppOutcome { Installed, DryRunPrinted, FontNamesPrinted, PickerCancelled }`.
+- `enum AppOutcome { Installed, DryRunPrinted, FontNamesPrinted }`.
 - `AppFailure` — failure ADT: `Config(ConfigError, prefixPath)`, `DiscoveredConfig(ConfigError)`, `NoConfig(hint)`,
-  `NotATerminal`, `Release(ReleaseError)`, `Picker(PickerError)`, `UnsafeSelection(ConfigValidationError)`,
-  `Destination(PathError)`, `Install(InstallError)`, `Interrupted(phase)`. Every case renders one stderr line.
-  Cancellation is **not** a failure: it is `Right(AppOutcome.PickerCancelled)`.
+  `Release(ReleaseError)`, `Destination(PathError)`, `Install(InstallError)`, `Interrupted(phase)`. Every case
+  renders one stderr line.
 - `ExitCode.of(result: Either[AppFailure, AppOutcome]): Int` — the only place application results become POSIX
-  codes: any `Right` → 0; `NoConfig`, `NotATerminal`, `Release(NotFound | NoReleases)` → 2; every other `Left`
+  codes: any `Right` → 0; `NoConfig`, `Release(NotFound | NoReleases)` → 2; every other `Left`
   → 1. picocli's own `USAGE` (2) for malformed flags and 0 for `--help`/`--version` are produced inside
   `CommandLine.execute` and are the sole codes not routed through it.
 - `OutputStyle.detect(env, consoleAttached): ColourMode` (`NO_COLOR`, `TERM=dumb`, `CLICOLOR_FORCE`/`FORCE_COLOR`
@@ -169,7 +141,7 @@ colours: ColourMode, terminal: Terminal): Either[PickerError, PickerOutcome]` (d
   condition Go checks with `ModeCharDevice` on both streams — and `isTerminal` double-checks; no subprocess.
 - `BuildInfo` (generated by Mill: `version`, `commit`, `buildDate`).
 
-### 3.5 `app` module — `io.worxbend.nerdfonts.app`
+### 3.4 `app` module — `io.worxbend.nerdfonts.app`
 
 `Main` only: JVM/native-image entry point plus SIGINT handler registration (§6.8). Plus
 `app/resources/META-INF/native-image/io.worxbend/nerd-fonts-installer/reflect-config.json` and a test asserting
@@ -222,7 +194,7 @@ The candidate list is built in that order and de-duplicated preserving first occ
 config home there are 8 candidates, not 16, in both discovery and the no-config hint). If the home directory
 cannot be resolved (and `$XDG_CONFIG_HOME` is not absolute) the config-home candidates are silently omitted. If
 the working directory cannot be determined, discovery fails with `locate current directory: <cause>` — exit 1
-(also on the `--font-names` path) and no picker is started.
+(also on the `--font-names` path).
 
 Discovery (`ConfigDiscovery.discover`) returns `Some(DiscoveredConfig(path, config))` for the first candidate
 that exists, `None` if none exists, and a `ConfigError` (fatal: `load discovered config <path>: <cause>`, exit 1)
@@ -247,9 +219,7 @@ empty (not when filtering emptied it). Drop drafts and blank tags. Families = so
 `.zip` (case-insensitive) minus the extension; drop releases with no families. Release `name` falls back to the tag.
 
 `Release.families` is `Vector[String]` — raw asset stems, deliberately **not** `FamilyName`: they are untrusted
-upstream data used only for display and selection, `--font-names` prints them verbatim (Go prints
-`selected.Families` unmodified), and the catalogue never drops or rejects a stem. The conversion to `FamilyName`
-happens exactly once, at the picker → `InstallConfig` boundary (§7).
+upstream data used only by `--font-names`, which prints them verbatim (Go prints `selected.Families` unmodified), and the catalogue never drops or rejects a stem. Configured installs cross the `FamilyName` boundary in the config loader.
 
 Errors: empty result → `ReleaseError.NoReleases` (`no Nerd Fonts releases found`); unknown tag →
 `ReleaseError.NotFound(tag)` (`nerd fonts release "<tag>" was not found`); non-2xx page →
@@ -397,13 +367,9 @@ unwinding `finally` (and native-image is killed outright), which would leak `ner
   extra flags.
 - Interrupting the main thread ends the Ox scope: forks are interrupted, body reads throw, each `installFamily`
   `finally` removes its temp zip and staging dir, and an existing `<root>/<Family>` is untouched.
-- `InterruptedException` is never swallowed inside `core`/`picker`; `Cli.run` catches it exactly once after
+- `InterruptedException` is never swallowed inside `core`; `Cli.run` catches it exactly once after
   `Application.run` returns abruptly and maps it to `AppFailure.Interrupted(phase)`: rendered
   `install fonts: interrupted` during install, otherwise `interrupted`; exit **1**.
-- Picker/spinner: `stty raw` clears ISIG, so keyboard Ctrl-C reaches the picker as byte `0x03` → `Cancelled` →
-  exit 0. An external `kill -INT` interrupts the main thread; `abandonOnInterruptReads` unblocks the stdin read
-  and `SttyTerminal`'s `finally` leaves the alternate screen, re-shows the cursor and restores the saved `stty -g`
-  settings before the exit-1 path.
 
 ### 6.9 Events
 
@@ -436,102 +402,7 @@ enum InstallEvent:
 Colours (ANSI mode only; Go lipgloss numbers): spinner glyph 63, success glyph 42 bold, warning glyph 214, family
 name 81 bold, url 39 underlined, path 219.
 
-## 7. Interactive picker
-
-Entered only from `Application.resolveConfig` when: no explicit/env/discovered config, `--interactive` given, and
-`TerminalProbe` says both stdin and stdout are terminals. Otherwise: no config + not interactive → exit 2 with
-`no config found; pass --config, set NERD_FONTS_INSTALLER_CONFIG, or create one of: <candidates joined by ", ">`
-(when the candidate list cannot be computed or is empty, the hint degrades to
-`no config found; pass --config or set NERD_FONTS_INSTALLER_CONFIG`); interactive but not a terminal → exit 2
-`no config found; --interactive requires stdin and stdout terminals`.
-
-The interactive branch: print `No config found. Starting interactive mode...` to stderr; run
-`ReleaseLoadingSpinner.around(stderr, colours)(listReleases)`; a `Left(ReleaseError)` returns as
-`AppFailure.Release(err)` so `NoReleases` → 2 and `Http`/`Decode` → 1 exactly as for `--font-names`; on
-`Right(releases)` call `runPicker(releases, icons, colours)`; `Cancelled` → `Right(PickerCancelled)` → exit 0;
-`Rejected(e)` → `AppFailure.UnsafeSelection(e)` rendered `install fonts: <e>` → exit 1; `Selected(config)`
-continues to install. The picker never performs network IO.
-
-The spinner block mirrors Go's `tui.LoadReleases` on stderr:
-
-```
-
-  ✦ nerd-fonts-installer
-  ⠋ Loading Nerd Fonts releases
-```
-
-(leading blank line, two-space indents; the brand line is gradient-coloured in `Ansi` mode; the spinner cycles
-bubbles' `MiniDot` frames `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏` by rewriting the second line with `\r`). On success the second line ends
-as `  ✓ Releases loaded`; on failure it ends with the error message; an interrupt during the load ends it with
-`  interrupted` before the `InterruptedException` propagates, so the line is never left mid-spin.
-
-Model (pure, fully unit-tested without a terminal):
-
-- Steps: `ChooseRelease` → `ChooseFamilies` → `Done`.
-- Keys are resolved in strict precedence, **independent of filter state** (the Go model consumes its own keys
-  before the list sees them):
-  1. Global, both steps: `q` and `Ctrl-C` cancel; `Esc` goes back to releases on the families step and cancels on
-     the release step. These fire even while the filter input is focused — `Esc` never clears the filter and `q`
-     cannot be typed into it.
-  2. Step keys, consumed before the list: release step — `Enter` chooses the highlighted (filtered) release;
-     families step — `Enter` finishes (no-op when nothing is selected, even mid-filter), `Space` toggles the
-     highlighted family, `a` selects all / clears all, `b` goes back. None of these can be typed into the family
-     filter.
-  3. Everything else goes to the list. Browsing: `Up`/`k`, `Down`/`j`; `PgUp`/`Left` and `PgDn`/`Right` page
-     (also `b` on the release step, where it is not already claimed as a step key); `Home`/`g` first; `End`/`G`
-     last; `/` focuses the filter input (cursor reset to first item). Filtering: printable characters and
-     Backspace edit the filter and re-filter live; `Up`/`Down`/`Tab`/`Shift-Tab`/`Ctrl-K`/`Ctrl-J` apply the
-     filter when the input is non-empty (if it filters to nothing the filter is cleared instead); paging keys are
-     disabled while the input is focused. `Enter` never applies the filter. An applied filter persists until it is
-     re-opened with `/` and emptied. (Deviation: Go's `h/l/f/d/u` paging aliases are not bound.)
-  - Matching is fuzzy: case-insensitive subsequence match over `title + " " + description + " " + value`, ranked by
-    first-match position then match span, stable for ties (approximates sahilm/fuzzy).
-- Result: `Cancelled` when cancelled **or finished with nothing selected**; otherwise every selected stem is run
-  through `FamilyName.parse`. All parse → `Selected(InstallConfig(tag, destination "~/.local/share/fonts/NerdFonts", refreshFontCache = on, families sorted))`;
-  any failure → `Rejected(ConfigValidationError)` carrying the first failure (renders as Go's
-  `unsafe font family name "<name>"`). This is the only place picker output crosses the `FamilyName` boundary.
-- Layout budget mirrors the Go tool: banner box (gradient wordmark, breadcrumb on wide layouts, step title,
-  subtitle + badges dropped when compact = height < 26, gradient rule), list panel, optional side panel (width ≥
-  104 and only if it fits), footer help; constants `chromeHeight = 16`, `compactChromeHeight = 14`,
-  `minListHeight = 9`, floors 48 columns / 24 rows, `bodyWidth` cap 132, `previewWidth` 34. The rendered frame
-  **never exceeds `safeHeight`** and no line is visibly wider than `safeWidth` — test across the Go size matrix
-  (40×10, 60×20, 80×24, 104×25, 100×30, 112×34, 160×50, 200×60) for both steps.
-- Icon sets and the Nerd-family glyph table are copied verbatim from the Go `icons.go`. `auto` == `unicode`.
-- Rendering is a full-frame redraw per key on the alternate screen. Colours go through `fansi` true-colour and are
-  emitted only when the `ColourMode` passed to `PickerView.render` is `Ansi`; `cli` derives that value from
-  `OutputStyle` and hands it in via `runPicker`, so `picker` never references `cli`.
-
-`SttyTerminal` issues every `stty` call through `ProcessRunner` as
-`ProcessSpec(Vector("stty", …), stdin = Stdin.FromFile(os.Path("/dev/tty")), stdout = Stdout.Capture)` — no shell.
-`stty -g` saves the settings string (opaque; Linux and macOS formats differ; only ever passed back to
-`stty <saved>`), `stty raw -echo` enters raw mode, and the saved string is restored in a `finally` that wraps
-the raw-mode entry itself, not just the session body — so `stty <saved>` still runs even if `stty raw -echo`
-throws (an `InterruptedException` can surface from `Process.waitFor()` after the child has already applied the
-termios change) rather than returning a normal `Left`. The alternate screen and cursor sequences are emitted
-only once raw mode is confirmed entered. Size comes from `stty size` (`rows cols`) on every frame; fallback
-80×24 on any `Left`, non-zero exit or parse failure.
-
-**Output.** `stty raw` clears `opost`/`onlcr`, so the terminal no longer turns `\n` into CR+LF. `write(frame)`
-emits `ESC[?1049h` once on entry (alternate screen) and `ESC[?25l` (hide cursor); each frame is `ESC[H`, the lines
-joined with `\r\n` (each followed by `ESC[K`), then `ESC[J`, as one flushed write; exit emits `ESC[?25h` and
-`ESC[?1049l`. Never write a bare `\n` while in raw mode (a test asserts no `\n` without a preceding `\r`).
-
-**Input.** Exactly one `abandonOnInterruptReads(System.in)` per process (`StdinSource`); `SttyTerminal` never
-wraps `System.in` again. Neither `PickerSession` nor `KeyDecoder` opens a `supervised` scope of its own —
-`PickerSession.drive` is a plain tail-recursive loop. `abandonOnInterruptReads` and `timeoutOption` (the
-post-`ESC` byte race) are each self-contained Ox calls that manage their own short-lived internal fork per
-invocation, reading on a detached thread and racing it against interruption of the calling thread rather than
-requiring one. That is what makes cancellation safe without a scope here: `app.Main` turns SIGINT into
-`mainThread.interrupt()`, which unblocks a pending `read()` promptly instead of deadlocking on it (the
-underlying blocked OS read is abandoned, not force-cancelled), and `SttyTerminal.withRawMode`'s `finally`
-still restores the saved terminal settings when the resulting `InterruptedException` unwinds through it.
-`KeyDecoder`: `0x03` = Ctrl-C, `0x0a` = Ctrl-J, `0x0b` = Ctrl-K, `0x0d` = Enter, `0x09` = Tab, `0x7f`/`0x08` =
-Backspace, `0x20` = Space, `0x1b` starts an escape sequence, other bytes decode as UTF-8 `Char`. After `0x1b` the
-next byte is read with `timeoutOption(escapeTimeout)` (default 50 ms; constructor parameter); timeout → `Escape`.
-`[` (CSI) or `O` (SS3) → read the final byte: `A/B/C/D` → `Up/Down/Right/Left`, `H/F` → `Home/End`, `Z` →
-`ShiftTab`, digits followed by `~` (`5~`/`6~`/`1~`/`4~`) → `PageUp/PageDown/Home/End`; anything else is ignored.
-
-## 8. CLI
+## 7. CLI
 
 Single root command `nerd-fonts-installer`, no subcommands, `sortOptions = false`, custom header
 (`Nerd Fonts, installed the boring way.`). `mixinStandardHelpOptions` is **off**: the tool owns `--version`
@@ -542,14 +413,11 @@ Single root command `nerd-fonts-installer`, no subcommands, `sortOptions = false
 Flag-parsing parity with Go's `flag` package:
 
 - Declare every option with both spellings: `names = Array("-config", "--config")`, `Array("-dry-run", "--dry-run")`,
-  `Array("-font-names", "--font-names")`, `Array("-interactive", "--interactive")`, `Array("-icons", "--icons")`.
+  `Array("-font-names", "--font-names")`.
 - Booleans stay plain arity-0 options; picocli already accepts `--dry-run=false`. Do **not** use `arity = "0..1"`.
 - Positional arguments are accepted and ignored, and parsing stops at the first positional (Go stops there):
   a hidden `@Parameters(arity = "0..*", hidden = true)` sink plus `setStopAtPositional(true)`. Do **not** use
   `setUnmatchedArgumentsAllowed(true)`: unknown options such as `--bogus` must still exit 2.
-- `--icons` is bound as a raw `String`, normalised with trim + lower-case (`' NERD '` is valid) and validated
-  **before** `--version` is honoured (`--version --icons bogus` exits 2) with the byte-exact message quoting the raw
-  value: `invalid --icons "<raw>"; use auto, nerd, unicode, or ascii`. Implemented in `Cli`, not as a converter.
 
 `--version` prints `nerd-fonts-installer <version> (<commit>, <date>)` (Go: `"%s %s (%s, %s)\n"`). All three are
 compile-time constants in the generated `cli.BuildInfo` (`version`, `commit`, `buildDate`); `build.mill` derives
@@ -557,21 +425,21 @@ commit and date from `Task.Input` tasks (`git rev-parse --short=12 HEAD` or `unk
 `NERD_FONTS_INSTALLER_BUILD_DATE` or `unknown`). `release.yml` exports the date variable before invoking Mill.
 
 In `Cli.run`: 1. `CommandLine.execute(args)`: picocli usage errors → 2; `--help`/`--version` → print, 0.
-2. Validate `--icons` → 2 on failure. 3. Build `CliOptions`. 4. `ExitCode.of(Application.run(options, deps, out, err))`,
-printing the `AppFailure` message on `Left` (prefixed `install fonts: ` for install failures and unsafe picker
-selections). 5. `InterruptedException` escaping `Application.run` → `AppFailure.Interrupted` → 1 (§6.8).
+2. Build `CliOptions`. 3. `ExitCode.of(Application.run(options, deps, out, err))`, printing the `AppFailure`
+message on `Left` (prefixed `install fonts: ` for install failures). 4. `InterruptedException` escaping
+`Application.run` → `AppFailure.Interrupted` → 1 (§6.8).
 
 In `Application.run(options)`: 1. `CliMode.FontNames` → resolve release from explicit/env/discovered config
 (default `latest`), list, select, print → `Right(FontNamesPrinted)`; errors: `NotFound`/`NoReleases` → 2,
-config load errors and everything else → 1. 2. Resolve config (explicit → env → discovered → picker);
-`Cancelled` → `Right(PickerCancelled)`. 3. Expand the destination, build the `InstallRequest`, install (or dry
-run) → `Right(Installed)` / `Right(DryRunPrinted)`.
+config load errors and everything else → 1. 2. Resolve config (explicit → env → discovered); no config →
+`AppFailure.NoConfig`. 3. Expand the destination, build the `InstallRequest`, install (or dry run) →
+`Right(Installed)` / `Right(DryRunPrinted)`.
 
 All informational progress goes to **stderr**; stdout carries only machine-readable output (`--font-names`,
 dry-run plan lines, `fc-cache` output). Error lines are the bare rendered message. Implementations use
 `PrintWriter`s created with `autoFlush = true`.
 
-## 9. Testing strategy
+## 8. Testing strategy
 
 - `core/fonts`: property test — anything `FamilyName` accepts is non-empty, contains no `/`, `\` or NUL, is not
   `.`/`..`, is not absolute, equals its own base name; the exact Go acceptance/rejection tables.
@@ -599,22 +467,12 @@ dry-run plan lines, `fc-cache` output). Error lines are the bare rendered messag
   `[~, Hack]` → `["Hack"]`, `release: ~` → default; JSON `"families": [3270]` → wrong type), `.conf`/`.yml`/no
   extension parsed as YAML, `.JSON` as JSON, discovery order, de-duplication when cwd = config home, XDG rules
   (absolute vs relative), missing home omits config-home candidates, existing-but-broken candidate is fatal.
-- `picker`: model transitions for every rule in the precedence table (including `q` while filtering cancels; `Esc`
-  while filtering goes back / cancels and leaves the filter text; `Enter` while filtering with 0 selected is a
-  no-op; `Enter` while filtering on the release step chooses the first fuzzy match; `Space`/`a`/`b` while
-  filtering are not inserted; `Up`/`Down` with a non-empty filter apply it), result mapping (sorted, none →
-  `Cancelled`, `../x` selected → `Rejected`), `FamilyHint`, icon tables, `ListState` filtering/scrolling, the
-  frame height/width budget matrix, a `Plain` frame contains no `ESC[` colour sequences, `KeyDecoder` table (bare
-  ESC, `ESC [ A`, `ESC O A`, `ESC [ 5 ~`, multi-byte UTF-8, Ctrl-C), `write` emits `\r\n`-joined lines only, and
-  a `ScriptedTerminal` end-to-end session (choose release, toggle two families, enter → `Selected`).
 - `cli`: golden tests through `Cli.run` with fake dependencies for every exit-code path: `--version` format,
   `--font-names` (latest, configured release, env override, discovered config, missing release → 2, no releases →
   2, broken config → 1), malformed flag → 2, `--bogus` → 2, single-dash aliases, `--dry-run=false`, positionals
-  ignored and `extra --dry-run` leaves dry-run off, invalid `--icons` → 2 even with `--version`, `--icons ' NERD '`
-  accepted, no config non-interactive → 2 with the hint, `--interactive` without terminal → 2, explicit config
+  ignored and `extra --dry-run` leaves dry-run off, no config → 2 with the hint, explicit config
   load failure → 1 with `load config <path>`, discovered broken → 1 with `load discovered config <path>`,
-  discovered config prints `Using config`, explicit does not, picker cancelled → 0, picker `Rejected` → 1 with
-  `install fonts: unsafe font family name "../x"`, `NoReleases` on the picker path → 2, one-family download failure
+  discovered config prints `Using config`, explicit does not, one-family download failure
   prints the single `install fonts: install Nerd Font family <F>: download <url>: 404 Not Found` line → 1,
   `InterruptedException` from `installFonts` → 1 with `install fonts: interrupted`; `ConsoleEventRenderer` golden
   test for all eight events in `Ansi` and `Plain`; `OutputStyle` rules; `Application.run` unit tests assert the
@@ -624,11 +482,11 @@ dry-run plan lines, `fc-cache` output). Error lines are the bare rendered messag
   config, and on ubuntu `kill -INT` mid-download against a local stub server asserting exit 1 and no
   `nerd-font-*.zip` / `.<Family>-*` left behind.
 
-## 10. Deliverables outside the code
+## 9. Deliverables outside the code
 
 `README.md` (best-in-class, modelled on the Go README but truthful for this implementation),
-`docs/ARCHITECTURE.md` (module map, invariants, decision log — including the `--help` and `h/l/f/d/u`
-deviations), `docs/SECURITY.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, `config.example.yaml`, `scripts/install.sh`,
+`docs/ARCHITECTURE.md` (module map, invariants, decision log), `docs/SECURITY.md`, `CONTRIBUTING.md`,
+`CHANGELOG.md`, `config.example.yaml`, `scripts/install.sh`,
 `.github/workflows/checks.yml` (fmt, scalafix, compile, tests on `ubuntu-24.04` + `macos-15`),
 `.github/workflows/release.yml` (4 native images built by `./mill app.nativeImage` on a per-target runner matrix —
 native-image cannot cross-compile and the Mill-fetched toolchain means no `setup-graalvm`/`setup-java` step:
@@ -637,7 +495,7 @@ native-image cannot cross-compile and the Mill-fetched toolchain means no `setup
 Release on `v*` tags and a moving `latest` pre-release with stable asset names), `.github/dependabot.yml`,
 `AGENTS.md` + `CLAUDE.md`. `app.writeAssembly` (JVM jar) is a local convenience only.
 
-## 11. Implementation notes
+## 10. Implementation notes
 
 The code is the reference for anything below; each item is a deliberate departure from, or refinement of, the
 sections above, collected from the implementation commits and the integration pass. `docs/ARCHITECTURE.md`
@@ -665,10 +523,6 @@ carries the reasoning; `docs/PARITY.md` the measured comparison with Go.
   `field <key> not found in type config.Config`; prefix, stream and exit code match.
 - **§4 `ReleaseTag.parse` and `DestinationPath.parse` return `Option`**; `InstallConfig.validated` turns absence
   into `release is required` / `destination is required`.
-- **§7 `PickerStep` has a fourth case, `Cancelled`**, so `update` can ignore keys after the end without a flag.
-  `KeyDecoder.Char` is a BMP `Char` (supplementary code points are dropped); unknown CSI/SS3 sequences are
-  consumed whole; `Box` truncates with `…` instead of wrapping; the list window scrolls and the page indicator
-  counts pages; the spinner pads with spaces rather than `ESC[K`. `h/l/f/d/u` remain unbound.
 - **§8 `--help`** goes to stdout with exit 0 (as §1 states); a malformed command line prints picocli's own
   first line (`Unknown option: '--bogus'`) before the usage, where Go prints `flag provided but not defined`.
   Every option carries an explicit `order` so the usage text is Go's alphabetical order with `--help` last.

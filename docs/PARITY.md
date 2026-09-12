@@ -9,11 +9,9 @@ compared with `diff`. Network scenarios ran against the live GitHub API and rele
 | Scenario | Go: exit / stdout / stderr | Scala: exit / stdout / stderr | Verdict |
 | --- | --- | --- | --- |
 | `--version` | 0 / `nerd-fonts-installer dev (none, unknown)` / — | 0 / `nerd-fonts-installer 0.1.0 (3b1a900b2f1f, unknown)` / — | Same shape `<name> <version> (<commit>, <date>)`; values are build inputs |
-| `--help` | 2 / — / `Usage of nerd-fonts-installer:` + flag list | 0 / header + picocli usage + flag list / — | **Intentional deviation** (SPEC §1): usage on stdout, exit 0. Options listed in Go's order (`config, dry-run, font-names, icons, interactive, version`) with `-h, -help, --help` appended |
-| `--icons bogus` | 2 / — / `invalid --icons "bogus"; use auto, nerd, unicode, or ascii` | 2 / — / identical | Byte-identical |
-| `--version --icons bogus` | 2 / — / `invalid --icons "bogus"; …` | 2 / — / identical | Byte-identical (`--icons` validated before `--version`) |
-| no config, empty `$HOME`, empty cwd, `--interactive` absent | 2 / — / `no config found; pass --config, set NERD_FONTS_INSTALLER_CONFIG, or create one of: <16 candidates>` | 2 / — / identical | `diff` empty: same 16 candidates in the same order |
+| `--help` | 2 / — / `Usage of nerd-fonts-installer:` + flag list | 0 / header + picocli usage + flag list / — | **Intentional deviation** (SPEC §1): usage on stdout, exit 0. Options listed in the Scala tool's order (`config, dry-run, font-names, version`) with `-h, -help, --help` appended |
 | `--config unknown.yaml` (extra key `bogus`) | 1 / — / `load config <path>: parse <path>: yaml: unmarshal errors:` ⏎ `  line 4: field bogus not found in type config.Config` | 1 / — / `load config <path>: parse <path>: unknown field "bogus"` | Same prefixes and exit code; the detail is yaml.v3's two-line message versus the SPEC §3.2 `UnknownField` wording (one line, field quoted). Accepted: the spec defines the cause text as platform wording |
+| no config, empty `$HOME`, empty cwd | 2 / — / `no config found; pass --config, set NERD_FONTS_INSTALLER_CONFIG, or create one of: <16 candidates>` | 2 / — / identical | `diff` empty: same 16 candidates in the same order |
 | `--config dup.yaml` (`families: [Hack, Hack]`) | 1 / — / `load config <path>: duplicate font family "Hack"` | 1 / — / identical | Byte-identical |
 | `--font-names --config pinned.yaml` (`release: v3.4.0`, live API) | 0 / `# v3.4.0` ⏎ `families:` ⏎ 72 `  - <stem>` lines / — | 0 / identical / — | `diff` empty |
 | `--config config.example.yaml --dry-run` | 0 / four `• Would install …` lines + `↻ Would refresh font cache for …` / — | 0 / identical / — | `diff` empty (destination `~` expanded to the same absolute path) |
@@ -23,7 +21,7 @@ compared with `diff`. Network scenarios ran against the live GitHub API and rele
 
 ## Behaviour confirmed identical by the shared scenarios
 
-- Exit codes: 0 / 1 / 2 map exactly as Go's `exitCodeFor` (`--help` excepted, above).
+- Exit codes: 0 / 1 / 2 map to the same categories as Go for the remaining config-driven surface (`--help` excepted, above).
 - Operation prefixes: `load config <path>: `, `load discovered config <path>: `, `install fonts: `.
 - Config discovery order, candidate de-duplication and the hint text.
 - `--font-names` output format and the raw asset stems, including `Go-Mono`, `iA-Writer` and `FontPatcher`.
@@ -37,5 +35,5 @@ compared with `diff`. Network scenarios ran against the live GitHub API and rele
 | --- | --- |
 | `--help` → stdout, exit 0 | SPEC §1; `--help \| less` is what people do, Go's exit 2 is a `flag` artefact |
 | Parser-generated wording for a malformed command line and for a YAML unknown key | Not machine-parsed; the prefix, stream and exit code — which scripts check — match |
+| Terminal selection feature is absent | Product decision: the Scala port is config-file-driven only |
 | Second SIGINT halts with 130 | Escape hatch for a cleanup that hangs; Go absorbs repeats (SPEC §6.8) |
-| Picker `h/l/f/d/u` paging aliases unbound | SPEC §7 |

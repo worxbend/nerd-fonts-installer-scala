@@ -6,15 +6,13 @@ package io.worxbend.nerdfonts
  *
  * `FamilyName.parse` deliberately allows control characters (only `/`, `\`, NUL, `.`/`..` and an absolute path
  * are rejected, so a name can still round-trip through `%q`-style quoting in an error message), and a release
- * asset stem is untrusted GitHub API data that reaches the interactive picker before any validation runs at
- * all. Without this, a spoofed release or a hostile zip entry can carry a raw escape character (title-setting
- * `OSC`, screen-clearing `CSI`, …) straight into a progress line or the picker's raw-mode frame.
+ * asset stem is untrusted GitHub API data. Without this, a spoofed release or a hostile zip entry can carry a
+ * raw escape character (title-setting `OSC`, screen-clearing `CSI`, …) straight into a progress line.
  *
  * Every C0 control character (code points 0–31, most importantly the escape character at 27), `DEL` (127) and
  * the C1 range (128–159, reachable once UTF-8 is decoded to `Char`) is replaced one-for-one with `?`.
- * Substitution rather than removal keeps the string the same length, so a position computed against the
- * original text (the picker's fuzzy-match highlighting) still lines up against the sanitised one. Nothing else
- * is touched: this is a terminal-safety transform, not a display-width or validation one.
+ * Substitution rather than removal keeps the string the same length for callers that track display positions.
+ * Nothing else is touched: this is a terminal-safety transform, not a display-width or validation one.
  */
 private[nerdfonts] object TerminalSafe:
   private val placeholder = '?'

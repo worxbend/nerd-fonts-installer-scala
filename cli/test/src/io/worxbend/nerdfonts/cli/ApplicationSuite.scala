@@ -7,14 +7,9 @@ import io.worxbend.nerdfonts.config.DiscoveredConfig
 import io.worxbend.nerdfonts.environment.Environment
 import io.worxbend.nerdfonts.environment.EnvironmentError
 import io.worxbend.nerdfonts.environment.PathError
-import io.worxbend.nerdfonts.fonts.ConfigValidationError
 import io.worxbend.nerdfonts.fonts.DryRun
-import io.worxbend.nerdfonts.fonts.FamilyNameError
 import io.worxbend.nerdfonts.fonts.ReleaseSelector
 import io.worxbend.nerdfonts.install.InstallError
-import io.worxbend.nerdfonts.picker.PickerError
-import io.worxbend.nerdfonts.picker.PickerOutcome
-import io.worxbend.nerdfonts.picker.TerminalError
 import io.worxbend.nerdfonts.releases.ReleaseError
 
 import java.util.concurrent.atomic.AtomicReference
@@ -101,48 +96,9 @@ final class ApplicationSuite extends munit.FunSuite:
       Left(AppFailure.DiscoveredConfig(cause)),
     )
 
-  test("no config and no --interactive is NoConfig with the candidates"):
+  test("no config is NoConfig with the candidates"):
     val env = environment()
     assertEquals(application(options(), deps(env)), Left(AppFailure.NoConfig(candidates(env))))
-
-  test("--interactive without a terminal is NotATerminal"):
-    assertEquals(
-      application(options(interactive = Interactive.Requested), deps()),
-      Left(AppFailure.NotATerminal),
-    )
-
-  test("a cancelled picker is PickerCancelled"):
-    val d = deps().copy(isTerminal = () => true)
-    assertEquals(
-      application(options(interactive = Interactive.Requested), d),
-      Right(AppOutcome.PickerCancelled),
-    )
-
-  test("a rejected selection is UnsafeSelection"):
-    val cause = ConfigValidationError.InvalidFamily(FamilyNameError.Unsafe("../x"))
-    val d     =
-      deps().copy(isTerminal = () => true, runPicker = (_, _, _) => Right(PickerOutcome.Rejected(cause)))
-    assertEquals(
-      application(options(interactive = Interactive.Requested), d),
-      Left(AppFailure.UnsafeSelection(cause)),
-    )
-
-  test("a picker that cannot enter raw mode is a Picker failure"):
-    val cause = PickerError.Terminal(TerminalError.RawModeUnavailable("stty -g: exit status 1"))
-    val d     = deps().copy(isTerminal = () => true, runPicker = (_, _, _) => Left(cause))
-    assertEquals(application(options(interactive = Interactive.Requested), d), Left(AppFailure.Picker(cause)))
-
-  test("a selected picker config installs"):
-    val d =
-      deps().copy(isTerminal = () => true, runPicker = (_, _, _) => Right(PickerOutcome.Selected(hackConfig)))
-    assertEquals(application(options(interactive = Interactive.Requested), d), Right(AppOutcome.Installed))
-
-  test("a listing failure on the picker path is a Release failure"):
-    val d = deps().copy(isTerminal = () => true, listReleases = () => Left(ReleaseError.NoReleases))
-    assertEquals(
-      application(options(interactive = Interactive.Requested), d),
-      Left(AppFailure.Release(ReleaseError.NoReleases)),
-    )
 
   test("an unknown release for font names is a Release failure"):
     assertEquals(

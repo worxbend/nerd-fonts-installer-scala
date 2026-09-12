@@ -3,8 +3,7 @@
 
 The recording is the raw byte stream the program wrote (frames, colours, cursor and erase sequences), which
 `render.py` replays into an SVG. Keys are sent one step at a time; each step waits until the program has
-painted a new frame since the previous key (a frame starts with `ESC[H`, the cursor-home the picker
-repaints from) and the output has then been quiet for a moment, so the capture is paced by the program
+painted a new frame since the previous key (a frame starts with `ESC[H`, the cursor-home marker) and the output has then been quiet for a moment, so the capture is paced by the program
 rather than by guessed sleeps. The recording ends when the program exits, or at the timeout.
 
 Standard library only; no third-party packages.
