@@ -31,14 +31,28 @@ fi
 binary="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
 
 # A healthy run is ~3s. 30s leaves ~10x headroom for GitHub API and runner network jitter while still
-# failing fast on a hang; `--kill-after=5` guarantees the hung process actually dies.
+# failing fast on a hang; the kill-after guarantees the hung process actually dies.
 timeout_seconds="${NATIVE_SMOKE_TIMEOUT:-30}"
 
-echo "native network smoke: ${binary} --font-names (timeout ${timeout_seconds}s)"
+# `timeout` is GNU coreutils and is absent on macOS, where Homebrew installs it as `gtimeout`. Both the
+# `--kill-after` flag and `-s` are GNU-specific, so a BSD fallback is not an option: without a usable
+# timeout we cannot distinguish a hang from a slow run, and a hang would stall the whole job. Fail loudly
+# rather than silently skipping the one check that catches a non-terminating binary.
+if command -v timeout >/dev/null 2>&1; then
+  timeout_cmd="timeout"
+elif command -v gtimeout >/dev/null 2>&1; then
+  timeout_cmd="gtimeout"
+else
+  echo "FAIL: no GNU timeout available (need 'timeout' or 'gtimeout'; on macOS: brew install coreutils)." >&2
+  echo "      Refusing to run the smoke test without one -- a hung binary would stall the job." >&2
+  exit 1
+fi
+
+echo "native network smoke: ${binary} --font-names (timeout ${timeout_seconds}s via ${timeout_cmd})"
 
 output=""
 status=0
-output="$(timeout --kill-after=5 -s TERM "${timeout_seconds}" "${binary}" --font-names 2>&1)" || status=$?
+output="$("${timeout_cmd}" --kill-after=5 -s TERM "${timeout_seconds}" "${binary}" --font-names 2>&1)" || status=$?
 
 if [[ ${status} -eq 124 || ${status} -eq 137 ]]; then
   echo "FAIL: binary did not exit within ${timeout_seconds}s (signal exit ${status})." >&2

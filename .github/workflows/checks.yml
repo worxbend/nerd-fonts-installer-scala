@@ -102,6 +102,9 @@ jobs:
           timeout 120 "${BIN}" --config config.example.yaml --dry-run
           if timeout 60 "${BIN}" --bogus-flag; then echo "expected exit 2 for an unknown flag"; exit 1; fi
           scripts/ci/interrupt-smoke.sh "${BIN}"
+          # Everything above this line is offline: --dry-run is pure and --version/--help never start a
+          # Netty event loop, so none of them would notice a broken HTTP path in the native image.
+          scripts/ci/native-network-smoke.sh "${BIN}"
 
   actionlint:
     name: Lint workflows

@@ -155,6 +155,17 @@ jobs:
           test -x "${path}"
           echo "path=${path}" >> "${GITHUB_OUTPUT}"
 
+      - name: Ensure GNU timeout is available (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The native network smoke test needs GNU `timeout` (for --kill-after); macOS ships neither it
+          # nor gtimeout by default. Without one the script refuses to run, which would fail the build.
+          if ! command -v timeout >/dev/null 2>&1 && ! command -v gtimeout >/dev/null 2>&1; then
+            brew install coreutils
+          fi
+
       - name: Package
         shell: bash
         env:
@@ -171,6 +182,11 @@ jobs:
           if [[ -f README.md ]]; then cp README.md "dist/${name}/"; fi
           "dist/${name}/nerd-fonts-installer" --version
           "dist/${name}/nerd-fonts-installer" --help > /dev/null
+          # --version and --help never start a Netty event loop, so they pass even when the binary's HTTP
+          # path is broken. This is the only check that proves the packaged binary can actually reach the
+          # network, and it runs on every target -- including linux-arm64, which cannot be tested locally
+          # because native-image does not cross-compile.
+          scripts/ci/native-network-smoke.sh "dist/${name}/nerd-fonts-installer"
           tar -C dist -czf "dist/${name}.tar.gz" "${name}"
           rm -rf "dist/${name}"
           (cd dist && shasum -a 256 "${name}.tar.gz" > "${name}.tar.gz.sha256")
