@@ -3,8 +3,7 @@
 Thanks for helping. This file is the short version; [`AGENTS.md`](AGENTS.md) is the operating guide that
 humans and coding agents share, [`docs/SPEC.md`](docs/SPEC.md) is the behavioural contract, and
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) is the module map with the invariants and the decision log.
-Parity with the Go reference ([`worxbend/nerd-fonts-installer`](https://github.com/worxbend/nerd-fonts-installer))
-is a requirement; [`docs/PARITY.md`](docs/PARITY.md) records the measured comparison.
+The tool is self-sufficient: `docs/SPEC.md` is the single source of truth for how it behaves.
 
 ## Prerequisites
 
@@ -39,8 +38,8 @@ arguments, which discovers your config and installs fonts.
 
 Definition of done, from `AGENTS.md`: compiles with `-Werror`, all tests pass, formatted, scalafix clean, and
 `docs/ARCHITECTURE.md` updated in the same change whenever a boundary, contract or invariant moved. A
-deviation from `docs/SPEC.md` is listed in the commit or PR description and reflected back into the spec's
-§11 implementation notes.
+departure from `docs/SPEC.md` is listed in the commit or PR description and reflected back into the spec's
+§10 implementation notes.
 
 ## Module layout
 
@@ -92,8 +91,7 @@ is tested against a loopback server, everything else against fakes.
 | `cli/test` | `Fakes` builds an `AppDependencies` whose every seam is a pure function and `Fakes.run(deps, args*)` captures both streams and the exit code | `cli` |
 
 When you add a port, add its fake next to the port's tests and make it public if another module will need
-it. When you change a user-facing message, update the golden test in `cli/test` and check the wording
-against the Go reference; `docs/PARITY.md` lists the scenarios that were diffed byte for byte.
+it. When you change a user-facing message, update the golden test in `cli/test`.
 
 ## Commits and pull requests
 

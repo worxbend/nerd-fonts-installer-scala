@@ -42,7 +42,7 @@ so every name passes `FamilyName.parse` first. It rejects the empty string, `.`,
 a leading `/`, and anything whose base name differs from itself. The two places a raw string becomes a
 `FamilyName` are the config loader (`InstallConfig.validated`) and the checksum-manifest parser (an unparseable
 stem is skipped, never used). `Release.families` stays `Vector[String]` on purpose: upstream asset stems are
-printed by `--font-names` but never touch a path or URL. URL segments are additionally percent-escaped with Go's `url.PathEscape` rules
+printed by `--font-names` but never touch a path or URL. URL segments are additionally percent-escaped
 (`ReleaseUrls`).
 
 ### Every network body is byte-capped
@@ -84,7 +84,7 @@ GitHub's release page being flaky does not brick an install. If a digest for the
 differs from the SHA-256 of the downloaded bytes, the family fails with
 `checksum mismatch for <Family>: downloaded sha256 <got>, expected <want>`, the fan-out stops, in-flight
 siblings are cancelled, and the process exits 1. A family absent from the manifest installs unverified.
-This policy mirrors the Go reference and must not be weakened (AGENTS.md).
+This policy must not be weakened (AGENTS.md).
 
 ### Installs are staged, then renamed
 

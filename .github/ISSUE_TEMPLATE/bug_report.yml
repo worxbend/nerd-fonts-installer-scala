@@ -1,5 +1,5 @@
 name: Bug report
-description: Something behaves differently from what the documentation, the Go reference or common sense says.
+description: Something behaves differently from what the documentation or common sense says.
 title: "bug: "
 labels: [bug]
 body:
@@ -76,4 +76,4 @@ body:
         - label: I searched the existing issues.
           required: true
         - label: I ran the same command with `--dry-run` and included its output if it differs.
-        - label: I checked whether the Go reference (`worxbend/nerd-fonts-installer`) behaves the same way, if I have it.
+        - label: I checked `docs/SPEC.md` to see whether the behaviour I saw is the documented one.

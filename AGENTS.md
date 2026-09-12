@@ -5,9 +5,8 @@ Applies to Claude Code, Codex, and any other agent working in this repository.
 ## Read first
 
 1. [`docs/SPEC.md`](docs/SPEC.md) — the behavioural and architectural contract, and the single source of
-   truth for how the tool behaves. This project defines its own behaviour; parity with any external
-   reference implementation (including the original Go tool) is **not** a goal. Where SPEC and an outside
-   implementation disagree, SPEC wins.
+   truth for how the tool behaves. This project defines its own behaviour; it is a self-sufficient CLI and
+   is free to differ from any other implementation. Where a question about behaviour arises, SPEC wins.
 2. [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — module map, invariants and the decision log. Update it
    in the same change whenever a boundary, contract or invariant moves.
 

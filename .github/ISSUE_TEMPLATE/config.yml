@@ -3,6 +3,3 @@ contact_links:
   - name: Report a security vulnerability
     url: https://github.com/worxbend/nerd-fonts-installer-scala/security/advisories/new
     about: Use private vulnerability reporting, not a public issue. See docs/SECURITY.md.
-  - name: Behaviour of the Go reference
-    url: https://github.com/worxbend/nerd-fonts-installer/issues
-    about: Issues with the original Go tool belong in its own repository.

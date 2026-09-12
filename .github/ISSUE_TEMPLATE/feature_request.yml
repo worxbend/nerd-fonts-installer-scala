@@ -6,9 +6,8 @@ body:
   - type: markdown
     attributes:
       value: |
-        This project tracks the Go reference (`worxbend/nerd-fonts-installer`) closely: `docs/SPEC.md` is the
-        contract and `docs/PARITY.md` lists the deliberate deviations. A proposal that changes user-visible
-        behaviour is easier to accept when it says how it relates to the reference.
+        `docs/SPEC.md` is the behavioural contract for this CLI. A proposal that changes user-visible
+        behaviour is easier to accept when it says how it fits that contract.
   - type: textarea
     id: problem
     attributes:
@@ -24,12 +23,12 @@ body:
     validations:
       required: true
   - type: dropdown
-    id: parity
+    id: compatibility
     attributes:
-      label: Relation to the Go reference
+      label: Is this a breaking change?
       options:
-        - The Go tool already does this; this is a parity gap
-        - The Go tool does not do this; it would be a deviation
+        - "No: it is additive and existing configs and commands keep working"
+        - "Yes: it changes or removes existing behaviour"
         - Not applicable (build, docs, release process)
         - I do not know
     validations:

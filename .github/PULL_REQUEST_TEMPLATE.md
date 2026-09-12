@@ -2,10 +2,10 @@
 
 <!-- What changes and why. Link the issue if there is one. -->
 
-## Parity
+## Behaviour change
 
-<!-- Does user-visible behaviour change? If so, say whether the Go reference (worxbend/nerd-fonts-installer)
-     behaves the same way; a deviation must be listed in docs/SPEC.md §11 and docs/PARITY.md. -->
+<!-- Does user-visible behaviour change? If so, describe the new behaviour and update docs/SPEC.md
+     (the behavioural contract) in the same change. -->
 
 ## Checklist
 

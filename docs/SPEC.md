@@ -1,27 +1,22 @@
 # nerd-fonts-installer-scala — implementation specification
 
-Status: authoritative design, revised after a three-lens adversarial review (parity with the Go
-reference, ZIO / native-image feasibility, structure) and again for the migration from direct-style
-Scala (Ox + picocli) to a ZIO-native application. Implementation agents follow this document; deviations
-must be listed in the commit/PR description and reflected back here.
+Status: authoritative design, revised after an adversarial review (ZIO / native-image feasibility,
+structure) and again for the migration from direct-style Scala (Ox + picocli) to a ZIO-native
+application. Implementation agents follow this document; any departure from it must be listed in the
+commit/PR description and reflected back here.
 
 ## 1. Goal
 
-A Scala 3 re-implementation of [`worxbend/nerd-fonts-installer`](https://github.com/worxbend/nerd-fonts-installer)
-(Go) with identical user-facing behaviour, shipped as a GraalVM native binary for Linux (amd64, arm64)
-and macOS (amd64, arm64).
+This tool installs [Nerd Fonts](https://github.com/ryanoasis/nerd-fonts) from a declarative config file
+and ships as a GraalVM native binary for Linux (amd64, arm64) and macOS (amd64, arm64). It resolves a
+release, downloads one zip per font family from GitHub, verifies it against the release's `SHA-256.txt`,
+extracts only font files into `<destination>/<Family>/` atomically, and optionally runs `fc-cache`.
 
-The tool installs [Nerd Fonts](https://github.com/ryanoasis/nerd-fonts) from a declarative config file: resolve a release, download one zip per font family from GitHub,
-verify it against the release's `SHA-256.txt`, extract only font files into `<destination>/<Family>/`
-atomically, optionally run `fc-cache`.
-
-Parity targets (byte-for-byte where output is machine-readable; same wording elsewhere):
+Command surface and output contracts:
 
 - Flags: `--config <path>`, `--dry-run`, `--font-names`, `--version`, `--help`.
-  Only the double-dash spelling of a long flag is accepted (the Go reference also took `-config`/`-dry-run`;
-  this port drops the single-dash form deliberately — §7). Deliberate deviation: `--help`
-  prints usage to **stdout** and exits **0** (Go's `flag`
-  prints to stderr and exits 2 only as a stdlib artefact).
+  Only the double-dash spelling of a long flag is accepted (§7). `--help` prints usage to **stdout** and
+  exits **0**.
 - `--font-names` stdout format:
   ```
   # v3.4.0
@@ -32,8 +27,8 @@ Parity targets (byte-for-byte where output is machine-readable; same wording els
 - Exit codes: `0` success; `2` user-correctable input (malformed flags, no config found, unknown release tag, no releases at all);
   `1` everything else, **including config load/parse/validation errors** (explicit `--config`,
   `$NERD_FONTS_INSTALLER_CONFIG`, or a discovered candidate that exists but fails to load), network, filesystem,
-  extraction, checksum mismatch, `fc-cache` failure, interruption. This mirrors Go's `exitCodeFor`, which maps
-  only `ReleaseNotFoundError`, `ErrNoReleases` and `errNoConfig` to 2.
+  extraction, checksum mismatch, `fc-cache` failure, interruption. Only an unknown release tag, no releases,
+  and no config found map to 2; every other application failure maps to 1.
 - Config discovery order and the `NERD_FONTS_INSTALLER_CONFIG` env var (§4).
 - Install layout and atomic replacement semantics (§6).
 
@@ -88,9 +83,9 @@ Root package: `io.worxbend.nerdfonts`. Packages are named after concepts.
 
 | Package | Owns |
 | --- | --- |
-| `io.worxbend.nerdfonts.fonts` | `FamilyName` (validated opaque type — **the single path-traversal guard**; `parse(raw): Either[FamilyNameError, FamilyName]`, `value`, `Ordering`), `ReleaseTag` (opaque, non-blank trimmed), `ReleaseSelector` (`Latest \| Tagged(tag)`; `parse(raw)` maps blank/`latest` → `Latest`; `render`), `DestinationPath` (opaque, non-blank trimmed, unexpanded), `RefreshFontCache` and `DryRun` two-case enums, `InstallConfig(selector, destination, refreshFontCache, families: Vector[FamilyName])` with `InstallConfig.validated(...)` enforcing §4, `ConfigValidationError` ADT rendering the Go messages |
-| `io.worxbend.nerdfonts.releases` | `Release(name: String, tag: ReleaseTag, families: Vector[String])`, `ReleaseCatalogue` port (`def releases(): IO[ReleaseError, Vector[Release]]`), `GitHubReleaseCatalogue` adapter (paginated GitHub API client; each page fetched through `HttpClient.getString` with an 8 MiB cap, decoded by `ReleasePageDecoder` with zio-json, the whole page fetch wrapped in `.timeoutFail(ReleaseError.Http(Transport("timed out …")))(30.seconds)`), `ReleaseError` ADT (`NoReleases`, `NotFound(tag)`, `Http(HttpError)`, `Decode(message)`), `ReleaseSelection.select(releases, selector)`, `ReleaseUrls` (`download(selector, family): DownloadUrl`, `checksums(selector): Url`, Go `url.PathEscape` semantics), `Url`/`DownloadUrl` opaque types, `Sha256Digest` opaque type (lowercase 64-hex; `parse`, `fromBytes`), `ChecksumManifest.parse(text): Map[FamilyName, Sha256Digest]` |
-| `io.worxbend.nerdfonts.http` | `HttpClient` port — one streaming GET, so a body is never materialised by the port: `def get(request: HttpRequest, limit: ByteLimit, overflow: Overflow = Overflow.Reject): ZIO[Scope, HttpError, HttpResponse]`, where `HttpResponse(body: ZStream[Any, HttpError, Byte])`. The `Scope` bounds the underlying connection's lifetime; callers wrap the whole read in `ZIO.scoped`. `ResponseDelivery` is the one place the response discipline lives (invariant 2): a non-2xx status → `HttpError.Status(code)` and an oversize `Content-Length` → `HttpError.TooLarge(limit, Some(declared))` are refused before a caller ever sees a body; `cappedBody` caps the stream at `limit` — `ZStream#take(limit.value)` for `Overflow.Truncate` (used only for the checksum manifest, §6.7), and a running total threaded through `chunks.mapAccumZIO` that fails with `HttpError.TooLarge(limit, None)` the moment a chunk would push past `limit` for `Overflow.Reject` (chunk-at-a-time, never per byte, so hashing a 768 MiB archive is not dominated by the cap). The production adapter and the in-memory fake both delegate to `ResponseDelivery`, so tests exercise the real cap logic. Extensions `getBytes` (collect the whole body within the cap) and `getString` (UTF-8) live on the companion. `HttpRequest(url: Url, headers: Map[String, String])` with a default `User-Agent: nerd-fonts-installer`. `ZioHttpClient` adapter over the zio-http `Client`: `ZioHttpClient.hardenedClient` builds the client from `ClientSSLConfig.FromJavaxNetSsl()` so TLS certificates are validated (invariant 8), streams with `ZClient.streaming` (never the body-materialising `batched`), and follows redirects with a small hand-rolled loop that drops the `Authorization` header the moment a redirect target's host differs from the request's. Transport failures and timeouts → `HttpError.Transport(cause)`. `HttpError` ADT (`Transport(cause: String)`, `Status(code: Int)`, `TooLarge(limit: ByteLimit, declared: Option[Long])`); `HttpError.Status#statusLine` renders `"<code> <reason>"` via `HttpStatus.reasonPhrase(code): Option[String]` (built-in IANA table covering registered 1xx–5xx codes; fallback `"<code>"`) because zio-http exposes only the numeric status while Go's `resp.Status` always carries a reason phrase; **every** user-facing rendering of a non-2xx response goes through `statusLine`. `ByteLimit` opaque type over `Long` |
+| `io.worxbend.nerdfonts.fonts` | `FamilyName` (validated opaque type — **the single path-traversal guard**; `parse(raw): Either[FamilyNameError, FamilyName]`, `value`, `Ordering`), `ReleaseTag` (opaque, non-blank trimmed), `ReleaseSelector` (`Latest \| Tagged(tag)`; `parse(raw)` maps blank/`latest` → `Latest`; `render`), `DestinationPath` (opaque, non-blank trimmed, unexpanded), `RefreshFontCache` and `DryRun` two-case enums, `InstallConfig(selector, destination, refreshFontCache, families: Vector[FamilyName])` with `InstallConfig.validated(...)` enforcing §4, `ConfigValidationError` ADT rendering the validation messages |
+| `io.worxbend.nerdfonts.releases` | `Release(name: String, tag: ReleaseTag, families: Vector[String])`, `ReleaseCatalogue` port (`def releases(): IO[ReleaseError, Vector[Release]]`), `GitHubReleaseCatalogue` adapter (paginated GitHub API client; each page fetched through `HttpClient.getString` with an 8 MiB cap, decoded by `ReleasePageDecoder` with zio-json, the whole page fetch wrapped in `.timeoutFail(ReleaseError.Http(Transport("timed out …")))(30.seconds)`), `ReleaseError` ADT (`NoReleases`, `NotFound(tag)`, `Http(HttpError)`, `Decode(message)`), `ReleaseSelection.select(releases, selector)`, `ReleaseUrls` (`download(selector, family): DownloadUrl`, `checksums(selector): Url`, path segments percent-escaped), `Url`/`DownloadUrl` opaque types, `Sha256Digest` opaque type (lowercase 64-hex; `parse`, `fromBytes`), `ChecksumManifest.parse(text): Map[FamilyName, Sha256Digest]` |
+| `io.worxbend.nerdfonts.http` | `HttpClient` port — one streaming GET, so a body is never materialised by the port: `def get(request: HttpRequest, limit: ByteLimit, overflow: Overflow = Overflow.Reject): ZIO[Scope, HttpError, HttpResponse]`, where `HttpResponse(body: ZStream[Any, HttpError, Byte])`. The `Scope` bounds the underlying connection's lifetime; callers wrap the whole read in `ZIO.scoped`. `ResponseDelivery` is the one place the response discipline lives (invariant 2): a non-2xx status → `HttpError.Status(code)` and an oversize `Content-Length` → `HttpError.TooLarge(limit, Some(declared))` are refused before a caller ever sees a body; `cappedBody` caps the stream at `limit` — `ZStream#take(limit.value)` for `Overflow.Truncate` (used only for the checksum manifest, §6.7), and a running total threaded through `chunks.mapAccumZIO` that fails with `HttpError.TooLarge(limit, None)` the moment a chunk would push past `limit` for `Overflow.Reject` (chunk-at-a-time, never per byte, so hashing a 768 MiB archive is not dominated by the cap). The production adapter and the in-memory fake both delegate to `ResponseDelivery`, so tests exercise the real cap logic. Extensions `getBytes` (collect the whole body within the cap) and `getString` (UTF-8) live on the companion. `HttpRequest(url: Url, headers: Map[String, String])` with a default `User-Agent: nerd-fonts-installer`. `ZioHttpClient` adapter over the zio-http `Client`: `ZioHttpClient.hardenedClient` builds the client from `ClientSSLConfig.FromJavaxNetSsl()` so TLS certificates are validated (invariant 8), streams with `ZClient.streaming` (never the body-materialising `batched`), and follows redirects with a small hand-rolled loop that drops the `Authorization` header the moment a redirect target's host differs from the request's. Transport failures and timeouts → `HttpError.Transport(cause)`. `HttpError` ADT (`Transport(cause: String)`, `Status(code: Int)`, `TooLarge(limit: ByteLimit, declared: Option[Long])`); `HttpError.Status#statusLine` renders `"<code> <reason>"` via `HttpStatus.reasonPhrase(code): Option[String]` (built-in IANA table covering registered 1xx–5xx codes; fallback `"<code>"`) because zio-http exposes only the numeric status, so the reason phrase is looked up from a built-in IANA table; **every** user-facing rendering of a non-2xx response goes through `statusLine`. `ByteLimit` opaque type over `Long` |
 | `io.worxbend.nerdfonts.install` | `InstallRequest`, `InstallPlan` + `PlannedFamily` (pure output of `FontInstaller.plan`), `FontInstaller` (the engine), `ArchiveExtractor`, `DirectorySwap` (atomic replace with `.old` backup), `FontCacheRefresher` port + `FcCacheRefresher(processRunner)` adapter, `InstallEvent` (closed enum, eight cases, §6.9) + `InstallEventSink` (`def emit(event: InstallEvent): Unit`; contract: called from one thread at a time, in order — `FontInstaller` serialises the concurrent family fibers through a `Semaphore` permit, implementations must not add locking), `FamilyInstallError` ADT (`Download(url, HttpError)`, `Copy(url, tmp, cause)`, `ChecksumMismatch(actual, expected)`, `Staging(root, cause)`, `Extraction(zip, staging, ArchiveError)`, `Swap(SwapError)`, `TimedOut(limit)`), `InstallError` ADT (`Destination(root, cause)`, `Family(name: FamilyName, cause: FamilyInstallError)`, `FontCache(root, cause)`), `ArchiveError`, `SwapError`, `SizeLimits(download = 768 MiB, fontFile = 128 MiB, archive = 2 GiB, manifest = 1 MiB, apiPage = 8 MiB)` |
 | `io.worxbend.nerdfonts.environment` | `Environment` port (`variable`, `homeDirectory: Option[os.Path]`, `workingDirectory: Either[EnvironmentError, os.Path]`) with `Environment.System` and `Environment.fixed`; `PathExpander.expand(path: DestinationPath, env): Either[PathError, os.Path]` (expands only a bare `~` and a leading `~/`; `~user`, an embedded `~` and everything else are returned unchanged; relative paths resolve against the working directory; an unresolvable home is `PathError.NoHome`); `ColourMode` enum (`Ansi \| Plain`) — the value every renderer consumes; detection lives in `cli` |
 | `io.worxbend.nerdfonts.process` | `ProcessRunner` port (`run(spec: ProcessSpec): Either[ProcessError, ProcessResult]`, `lookPath(name: String): Option[os.Path]`), `ProcessSpec(command: Vector[String], stdin: Stdin = Stdin.Inherit, stdout: Stdout = Stdout.Inherit, stderr: Stderr = Stderr.Inherit)` with `enum Stdin { Inherit, FromFile(path) }`, `enum Stdout { Inherit, Capture }`, `enum Stderr { Inherit, Discard }` (`Inherit` = `ProcessBuilder.Redirect.INHERIT`, so `fc-cache` shares the real terminal), `ProcessResult(exit: ExitStatus, stdout: String)` (captured UTF-8 stdout, empty unless `Capture`), `ProcessError` ADT (`NotFound(command)`, `Failed(command, cause)`), `JdkProcessRunner` adapter (never a shell) |
@@ -102,10 +97,10 @@ Root package: `io.worxbend.nerdfonts`. Packages are named after concepts.
 YAML provider (`zio-config-yaml`), `.json` and `.conf`/`.hocon` through Typesafe Config (`zio-config-typesafe`,
 HOCON being a superset of JSON). zio-config does **not** read `ConfigDocument` directly: a `ConfigDto` case
 class of `Option`s carries the magnolia-derived `Config[ConfigDto]`, and the decoded DTO is mapped onto the
-unchanged `ConfigDocument`, which still owns the Go `ApplyDefaults` + `Normalize` + `Validate` sequence. An
+unchanged `ConfigDocument`, which still owns the defaulting, normalization and validation sequence. An
 unknown or missing extension is a hard error, not a silent guess (§4). Whichever format read the file, one
-`ConfigDocument` is produced, then defaulted and validated once. `DiscoveredConfig(path: os.Path, config: InstallConfig)` (the Scala
-counterpart of Go's `config.Source`), `ConfigLocations.candidates(env): IO[ConfigError, Vector[os.Path]]`
+`ConfigDocument` is produced, then defaulted and validated once. `DiscoveredConfig(path: os.Path, config: InstallConfig)`
+pairs a discovered path with its loaded config, `ConfigLocations.candidates(env): IO[ConfigError, Vector[os.Path]]`
 (the ordered, de-duplicated candidate list), `ConfigDiscovery.discover(env, load): IO[ConfigError, Option[DiscoveredConfig]]`
 (first candidate that exists is loaded; `None` when none exists; an existing candidate that fails to load
 fails the effect — never skipped), `ConfigError` ADT (`NotFound(path)`, `Unreadable(path, cause)`,
@@ -122,9 +117,9 @@ fails the effect — never skipped), `ConfigError` ADT (`NotFound(path)`, `Unrea
   and maps the result through `ExitCode.of`. It never uses a CLI framework: neither picocli nor zio-cli (§7).
   The whole boundary is a `ZIO` value that `app.Main` (`ZIOAppDefault`) executes.
 - `CliOptions(explicitConfig: Option[String], mode: CliMode, dryRun: DryRun)`
-  with `enum CliMode { FontNames, Install }`. The raw `--config` string is kept (Go treats
-  `--config ""` as explicit and echoes the raw path). `--font-names` selects `FontNames`; otherwise `Install`.
-- `AppDependencies` — the seams between `Application` and the world (the Go `dependencies` struct):
+  with `enum CliMode { FontNames, Install }`. The raw `--config` string is kept, so an explicit empty path is
+  echoed verbatim. `--font-names` selects `FontNames`; otherwise `Install`.
+- `AppDependencies` — the seams between `Application` and the world:
   `loadConfig`, `discoverConfig`, `configCandidates`, `listReleases`, `installFonts`, `expandDestination`, plus
   `environment` and `colours`. The effectful seams are ZIO effects — `loadConfig`/`discoverConfig`/
   `configCandidates` (`IO[ConfigError, …]`, the config module now being ZIO), `listReleases`
@@ -143,12 +138,12 @@ fails the effect — never skipped), `ConfigError` ADT (`NotFound(path)`, `Unrea
   hand-rolled parser (§7) and are the sole codes not routed through `ExitCode.of`.
 - `OutputStyle.detect(env, consoleAttached): ColourMode` (`NO_COLOR`, `TERM=dumb`, `CLICOLOR_FORCE`/`FORCE_COLOR`
   escape hatches — same rules as binstaller's `CliOutputStyle`).
-- `ConsoleEventRenderer(out, err, colours)` — the only place `InstallEvent`s become text; owns the Go-parity
+- `ConsoleEventRenderer(out, err, colours)` — the only place `InstallEvent`s become text; owns the event
   wording and the stdout/stderr routing (§6.9); exhaustive `match` with no wildcard; a plain writer with no
   locking, relying on the `InstallEventSink` contract.
 - `TerminalProbe.isTerminal(): Boolean` — `Option(System.console()).exists(_.isTerminal)`. On the JDK 25 toolchain
-  the default console provider (`java.base`) returns a console only when both stdin and stdout are TTYs — the same
-  condition Go checks with `ModeCharDevice` on both streams — and `isTerminal` double-checks; no subprocess.
+  the default console provider (`java.base`) returns a console only when both stdin and stdout are TTYs, and
+  `isTerminal` double-checks; no subprocess.
 - `BuildInfo` (generated by Mill: `version`, `commit`, `buildDate`).
 
 ### 3.4 `app` module — `io.worxbend.nerdfonts.app`
@@ -167,7 +162,7 @@ picocli reflection config is needed any more; the hand-rolled parser uses no ref
 
 ## 4. Configuration
 
-Format is chosen by the file's last extension only (Go's `filepath.Ext`, compared case-insensitively):
+Format is chosen by the file's last extension only, compared case-insensitively:
 `.json` → JSON, `.yaml`/`.yml` → YAML, `.conf`/`.hocon` → HOCON. Any other extension — or none — is a hard
 error, not a silent guess. It is a `ConfigError` like any other config-load failure and exits **1** (§1); exit
 2 is reserved for command-line usage errors (an unknown flag, or no config found at all), not for a config file
@@ -184,8 +179,7 @@ coerced, so `families: FiraCode` decodes as `Vector("FiraCode")` rather than fai
 from the pre-ZIO port:** `.conf` was previously decoded as YAML and is now
 HOCON (a flat `key: value` file parses identically, but a YAML block sequence must become
 `families = ["JetBrainsMono"]` or be renamed `.yaml`); and an unknown or missing extension is now an error
-instead of a YAML guess. (Unknown-key rejection, which the pre-ZIO port and the Go reference both did, is
-deliberately gone — see PARITY.md for the Go-parity divergence.)
+instead of a YAML guess.
 
 | Key | Required | Default | Notes |
 | --- | :-: | --- | --- |
@@ -194,12 +188,12 @@ deliberately gone — see PARITY.md for the Go-parity divergence.)
 | `refresh_font_cache` | no | `false` | boolean; the DTO field carries a `@name("refresh_font_cache")` (`zio.config.derivation.name`) because magnolia binds field names verbatim (see below) |
 | `families` | yes | — | list of strings; a bare scalar is coerced to a one-element list; each trimmed then validated by `FamilyName`; duplicates are an error |
 
-Whichever provider reads the file, the four keys above are read into one `ConfigDocument`, the Go defaults are
+Whichever provider reads the file, the four keys above are read into one `ConfigDocument`, the defaults are
 applied, and `InstallConfig.validated` enforces the rules in `core` (blank-after-trim is an error, `families`
 entries are each validated by `FamilyName`, duplicates are rejected, at least one family is required). Fine
 scalar coercion (e.g. `families: [3270]` taken as the string `"3270"`, boolean spellings for
 `refresh_font_cache`, a null leaving a default) follows the zio-config YAML provider and Typesafe Config; the
-parity-critical schema, defaults and validation messages are the contract and do not depend on the format.
+schema, defaults and validation messages are the contract and do not depend on the format.
 
 Two mechanics of the zio-config binding are load-bearing and easy to break:
 
@@ -249,14 +243,15 @@ Config validation messages: `release is required`, `destination is required`,
 `GitHubReleaseCatalogue` GETs `https://api.github.com/repos/ryanoasis/nerd-fonts/releases?per_page=100&page=N`
 for N = 1..maxPages (default 5), headers `Accept: application/vnd.github+json`, `User-Agent: nerd-fonts-installer`.
 Each page request has a **30 s overall deadline** covering connect, headers, body and decode
-(`.timeoutFail(...)( 30.seconds)` around the whole page fetch — Go's `http.Client{Timeout: 30s}`); a timeout
+(`.timeoutFail(...)( 30.seconds)` around the whole page fetch); a timeout
 surfaces as `ReleaseError.Http(HttpError.Transport("timed out after 30 seconds"))`. Stop when the **raw** page is
 empty (not when filtering emptied it). Drop drafts and blank tags. Families = sorted unique asset names ending in
 `.zip` (case-insensitive) minus the extension; drop releases with no families. Release `name` falls back to the tag.
-The page body is decoded with zio-json (`ReleasePageDecoder`), strict about field types like Go's `encoding/json`.
+The page body is decoded with zio-json (`ReleasePageDecoder`), strict about field types.
 
 `Release.families` is `Vector[String]` — raw asset stems, deliberately **not** `FamilyName`: they are untrusted
-upstream data used only by `--font-names`, which prints them verbatim (Go prints `selected.Families` unmodified), and the catalogue never drops or rejects a stem. Configured installs cross the `FamilyName` boundary in the config loader.
+upstream data used only by `--font-names`, which prints them verbatim, and the catalogue never drops or rejects
+a stem. Configured installs cross the `FamilyName` boundary in the config loader.
 
 Errors: empty result → `ReleaseError.NoReleases` (`no Nerd Fonts releases found`); unknown tag →
 `ReleaseError.NotFound(tag)` (`nerd fonts release "<tag>" was not found`); non-2xx page →
@@ -265,8 +260,7 @@ Errors: empty result → `ReleaseError.NoReleases` (`no Nerd Fonts releases foun
 
 `ReleaseSelection.select(releases, selector)`: `Latest` → first element; `Tagged(t)` → first with matching tag.
 
-URL builders (path segments percent-escaped like Go's `url.PathEscape`; test against the Go expectations in
-`internal/fonts/installer_test.go` `TestReleaseURL` / `TestChecksumURLEscapesRelease`):
+URL builders (path segments percent-escaped):
 
 - latest: `https://github.com/ryanoasis/nerd-fonts/releases/latest/download/<Family>.zip`
 - tagged: `https://github.com/ryanoasis/nerd-fonts/releases/download/<tag>/<Family>.zip`
@@ -274,8 +268,8 @@ URL builders (path segments percent-escaped like Go's `url.PathEscape`; test aga
 
 `ChecksumManifest.parse(text)`: each line `<hex>  <file>`; keep only `.zip` entries; digest lowercased; key is
 the file name without extension parsed as `FamilyName` (lines that fail to parse are skipped — they can never
-match a validated family). Read at most 1 MiB, **truncating** (not rejecting) anything beyond, like Go's
-`io.LimitReader`; a line cut by the limit is skipped like any other unparseable line. Manifest fetch failure is a
+match a validated family). Read at most 1 MiB, **truncating** (not rejecting) anything beyond; a line cut by
+the limit is skipped like any other unparseable line. Manifest fetch failure is a
 **warning**, digest mismatch is **fatal** — never weaken that.
 
 ## 6. Install engine (`FontInstaller`)
@@ -303,7 +297,7 @@ when enabled. Nothing touches the network or the disk. `ConsoleEventRenderer` wr
 ↻ Would refresh font cache for <root>
 ```
 
-Every progress/warning line the renderer emits carries the Go glyph prefix (`•` plan/warnings, `↻` dry-run cache,
+Every progress/warning line the renderer emits carries the glyph prefix (`•` plan/warnings, `↻` dry-run cache,
 `⠋` in progress, `✅` done). The glyph is part of the wording and is kept in `Plain` mode; only colour is dropped.
 
 ### 6.3 Real run
@@ -337,7 +331,7 @@ ZIO interrupts the effect and its finalizers run before `TimedOut` is observed, 
 when the `Left` is seen; the `Left` then travels the ordinary path and, through `ZIO.foreachPar`, cancels the
 in-flight siblings.
 
-Message shapes (`<cause>` is the nested error's text; platform wording, not a parity target):
+Message shapes (`<cause>` is the nested error's text; platform wording may vary):
 
 | Error | Rendered as |
 | --- | --- |
@@ -365,14 +359,14 @@ disjoint (`<root>/<Family>`, its own staging dir, its own `.old`), which is what
 `Semaphore.make(1)` created for the run guards every `sink.emit`: each fiber takes the permit
 (`semaphore.withPermit`) around its emit, so `InstallEventSink.emit` is invoked from one fiber at a time, in
 order, and the sink stays a plain writer with no locking of its own. Events outside the fan-out (the checksum
-warning, the font-cache lines) go through the same guarded `emit`. `ZIO.foreachPar` supplies the Go `errgroup`
-semantics directly: the first family to fail interrupts the in-flight siblings — whose `.ensuring` finalizers
-remove their scratch files — and finished families stay installed (§6.5).
+warning, the font-cache lines) go through the same guarded `emit`. `ZIO.foreachPar` supplies fail-fast fan-out
+semantics: the first family to fail interrupts the in-flight siblings — whose `.ensuring` finalizers remove
+their scratch files — and finished families stay installed (§6.5).
 
 ### 6.5 Error propagation
 
-A failing family must cancel in-flight siblings (Go `errgroup` semantics). `ZIO.foreachPar` provides exactly
-that with no machinery of our own: `installFamily(family)`'s typed error is mapped to
+A failing family must cancel in-flight siblings. `ZIO.foreachPar` provides fail-fast fan-out semantics with no
+machinery of our own: `installFamily(family)`'s typed error is mapped to
 `InstallError.Family(family.name, cause)`, and the first failure short-circuits the parallel combinator, which
 interrupts the still-running fibers before returning. Their `.ensuring` finalizers run during that
 interruption, so every scratch file is removed; already-completed families stay installed. The failure is an
@@ -389,25 +383,24 @@ streams `Inherit`), then emit `FontCacheRefreshed`. A non-zero exit or launch fa
 ### 6.7 Checksum fetch
 
 Fetched once before the fan-out via `httpClient.getString(checksumUrl, limits.manifest, Overflow.Truncate)`
-under a 30 s `.timeoutFail` (stricter than Go, acceptable because failure is only a warning). Any `HttpError`
+under a 30 s `.timeoutFail`, acceptable because a manifest failure is only a warning. Any `HttpError`
 or timeout → emit `ChecksumManifestUnavailable(cause)` and continue with an empty map, where `<cause>` is
 `statusLine` for a non-2xx response and the transport text otherwise. A truncated body still yields every
 complete line parsed before the cut. Any family absent from the map installs unverified; a present-but-mismatching
 digest is fatal.
 
-### 6.8 Interrupts (SIGINT parity)
+### 6.8 Interrupts (SIGINT)
 
-Go cancels its root context on SIGINT: in-flight downloads abort, every `defer` runs, and the process exits 1 with
-`install fonts: install Nerd Font family <F>: …: context canceled`. The equivalent under ZIO is fiber
-interruption. The JVM's default handler would exit 130 without unwinding finalizers (and native-image is killed
-outright), which would leak `nerd-font-*.zip` and `<root>/.<Family>-*` staging dirs; the ZIO runtime instead
-unwinds every `.ensuring`/`ZIO.acquireRelease` finalizer first. Therefore:
+SIGINT must interrupt cleanly: in-flight downloads abort through fiber interruption, and the program reports the
+interruption as an install failure after cleanup. The JVM's default handler would exit 130 without unwinding
+finalizers (and native-image is killed outright), which would leak `nerd-font-*.zip` and `<root>/.<Family>-*`
+staging dirs; the ZIO runtime instead unwinds every `.ensuring`/`ZIO.acquireRelease` finalizer first. Therefore:
 
 - The `ZIOAppDefault` runtime turns SIGINT into an interrupt of the program's main fiber. Interruption unwinds
   every finalizer, so each family's temp zip and staging dir are removed and an existing `<root>/<Family>` is
   left untouched.
-- A second SIGINT while the first is still unwinding forces the process down immediately with 130 — the one
-  intentional deviation from Go, which absorbs repeats.
+- A second SIGINT while the first is still unwinding forces the process down immediately with 130 — an
+  intentional escape hatch for a cleanup that itself hangs.
 - The interrupt is reported as `AppFailure.Interrupted(phase)`: rendered `install fonts: interrupted` during the
   install, otherwise `interrupted`; exit **1**. An `InterruptedException` is never swallowed inside `core`.
 
@@ -439,7 +432,7 @@ enum InstallEvent:
 | `RefreshingFontCache` | stderr | `⠋ Refreshing font cache for <root>` |
 | `FontCacheRefreshed` | stderr | `✅ Font cache refreshed` |
 
-Colours (ANSI mode only; Go lipgloss numbers): spinner glyph 63, success glyph 42 bold, warning glyph 214, family
+Colours (ANSI mode only): spinner glyph 63, success glyph 42 bold, warning glyph 214, family
 name 81 bold, url 39 underlined, path 219.
 
 ## 7. CLI
@@ -457,13 +450,11 @@ The command line is `nerd-fonts-installer [flags]`; there are no subcommands. Pa
 Parser contract:
 
 - Long flags use the **double-dash** form only: `--config <path>`, `--dry-run`, `--font-names`, `--version`,
-  `--help`. A single-dash long flag such as `-dry-run` is **not** recognised and is an error (the Go reference
-  accepted both spellings; dropping the single-dash form is deliberate, so an unknown `-dry-run` fails loudly
-  rather than silently performing a real install).
-- Repeated flags are **last-wins** (Go's `flag` package overwrites): `--config a --config b` uses `b`.
+  `--help`. A single-dash long flag such as `-dry-run` is **not** recognised and is an error, so it fails
+  loudly rather than silently performing a real install.
+- Repeated flags are **last-wins**: `--config a --config b` uses `b`.
 - An **unknown flag** prints a message to **stderr** and exits **2**. `--help` prints usage to **stdout** and
-  exits **0** (the one deliberate deviation from Go, which uses stderr and exit 2). `--version` is implemented
-  directly.
+  exits **0**. `--version` is implemented directly.
 
 `--font-names` resolves the release from explicit/env/discovered config, else falls back to `latest` when no
 config is discovered (unlike an install, which fails without a config), and prints the available font families
@@ -473,7 +464,7 @@ every native binary as the network smoke test (`scripts/ci/native-network-smoke.
 never start a Netty event loop, so they cannot exercise the HTTP path (§8, §9, and the
 `-H:+SharedArenaSupport` decision-log entry in `docs/ARCHITECTURE.md`).
 
-`--version` prints `nerd-fonts-installer <version> (<commit>, <date>)` (Go: `"%s %s (%s, %s)\n"`). All three are
+`--version` prints `nerd-fonts-installer <version> (<commit>, <date>)`. All three are
 compile-time constants in the generated `cli.BuildInfo` (`version`, `commit`, `buildDate`); `build.mill` derives
 commit and date from `Task.Input` tasks (`git rev-parse --short=12 HEAD` or `unknown`; `Task.env`
 `NERD_FONTS_INSTALLER_BUILD_DATE` or `unknown`). `release.yml` exports the date variable before invoking Mill.
@@ -499,7 +490,7 @@ dry-run plan lines, `fc-cache` output). Error lines are the bare rendered messag
 Tests are **zio-test** (`zio.test.sbt.ZTestFramework`); every port is faked and no test touches the network.
 
 - `core/fonts`: property test — anything `FamilyName` accepts is non-empty, contains no `/`, `\` or NUL, is not
-  `.`/`..`, is not absolute, equals its own base name; the exact Go acceptance/rejection tables.
+  `.`/`..`, is not absolute, equals its own base name; the FamilyName acceptance/rejection tables.
 - `core/http`: a non-2xx status is refused before a body is delivered; `Content-Length > limit` is refused
   before a body is delivered; a body of `limit + 1` bytes with no `Content-Length` fails the stream with
   `TooLarge` under `Overflow.Reject`; `Overflow.Truncate` yields the first `limit` bytes; `statusLine` for
@@ -547,7 +538,7 @@ Tests are **zio-test** (`zio.test.sbt.ZTestFramework`); every port is faked and 
 
 ## 9. Deliverables outside the code
 
-`README.md` (best-in-class, modelled on the Go README but truthful for this implementation),
+`README.md` (best-in-class),
 `docs/ARCHITECTURE.md` (module map, invariants, decision log), `docs/SECURITY.md`, `CONTRIBUTING.md`,
 `CHANGELOG.md`, `config.example.yaml`, `scripts/install.sh`,
 `.github/workflows/checks.yml` (fmt, scalafix, compile, tests on `ubuntu-24.04` + `macos-15`),
@@ -560,42 +551,41 @@ Release on `v*` tags and a moving `latest` pre-release with stable asset names),
 
 ## 10. Implementation notes
 
-The code is the reference for anything below; each item is a deliberate departure from, or refinement of, the
-sections above, collected from the implementation commits and the integration pass. `docs/ARCHITECTURE.md`
-carries the reasoning; `docs/PARITY.md` the measured comparison with Go.
+The code is the reference for anything below; each item is an implementation note or refinement of the sections
+above, collected from the implementation commits and the integration pass. `docs/ARCHITECTURE.md` carries the
+reasoning.
 
 - **§3.1 `ReleaseUrls` is a class over one `releases` base**, with `ReleaseUrls.github` as the production
   instance; `InstallPlan.of(request, urls)` and `FontInstaller(…, urls)` take it as a defaulted parameter. The
   composition root reads the undocumented test hook `NERD_FONTS_INSTALLER_BASE_URL` to point a run at a local
   stub (CI interrupt smoke); users never see it.
-- **§3.1 / §6.3 `FamilyInstallError` has a `TempZip(cause)` case** (Go's `create temporary zip file: <cause>`)
-  and `render(family)` takes the family so the checksum message can name it without every case carrying it.
+- **§3.1 / §6.3 `FamilyInstallError` has a `TempZip(cause)` case** rendering
+  `create temporary zip file: <cause>`, and `render(family)` takes the family so the checksum message can name
+  it without every case carrying it.
 - **§6.5 sibling cancellation is `ZIO.foreachPar`'s own**: the first family's typed error short-circuits the
   parallel combinator, which interrupts the in-flight fibers and runs their `.ensuring` finalizers; there is no
   private abort exception and no boundary `catch`.
 - **§6.3 `ZipInputStream` consequences:** a file that is not a zip has no entries and reports
-  `no font files found` rather than Go's `open font zip`; an entry without a declared size skips the declared
-  check and relies on the `fontFile + 1` cap and the running total. `ArchiveEntryError.InvalidName` names a base
-  name the filesystem cannot represent.
+  `no font files found`; an entry without a declared size skips the declared check and relies on the
+  `fontFile + 1` cap and the running total. `ArchiveEntryError.InvalidName` names a base name the filesystem
+  cannot represent.
 - **§3.1 `GitHubReleaseCatalogue` owns its 8 MiB page cap default** rather than reading `SizeLimits.apiPage`,
   which lives in the later-built `install` package.
 - **§4 empty documents and BOM** now follow zio-config's YAML provider and Typesafe Config rather than the
-  pre-ZIO scala-yaml/ujson stack; the parity-relevant outcome is unchanged — an empty or absent document leaves
+  pre-ZIO scala-yaml/ujson stack; the outcome is unchanged — an empty or absent document leaves
   every key unset, so validation reports `at least one font family is required`.
 - **§4 unrecognised keys are ignored, not rejected.** zio-config has no strict-schema mode, so a key the schema
   does not know is silently dropped and the known keys decode normally; a misspelled key falls back to its
-  default and surfaces later as a validation message (e.g. `at least one font family is required`). This
-  diverges from Go (and from the pre-ZIO port), which reported `unknown field "<key>"`; the Go-parity divergence
-  is recorded in PARITY.md. No security invariant depends on it — `FamilyName.parse` still guards every family
-  name before it reaches a path or URL.
+  default and surfaces later as a validation message (e.g. `at least one font family is required`). No security
+  invariant depends on it — `FamilyName.parse` still guards every family name before it reaches a path or URL.
 - **§4 `ReleaseTag.parse` and `DestinationPath.parse` return `Option`**; `InstallConfig.validated` turns absence
   into `release is required` / `destination is required`.
 - **§8 `--help`** goes to stdout with exit 0 (as §1 states); an unknown flag prints the hand-rolled parser's
-  own message to stderr before the usage and exits 2, where Go prints `flag provided but not defined`. A
-  single-dash long flag such as `-dry-run` is rejected the same way.
+  own message to stderr before the usage and exits 2. A single-dash long flag such as `-dry-run` is rejected
+  the same way.
 - **§6.3 temp directory:** `nerd-font-*.zip` is staged under `$TMPDIR` when set and non-empty, else the JDK's
-  `java.io.tmpdir`, matching Go's `os.CreateTemp("", …)`.
-- **§6.8 second SIGINT** halts the process with 130 (Go absorbs repeats).
+  `java.io.tmpdir`.
+- **§6.8 second SIGINT** halts the process with 130.
 - **§9 CI smoke:** `scripts/ci/interrupt-smoke.sh` implements the `kill -INT` scenario against a local Python
   stub and is invoked by `.github/workflows/checks.yml`.
 - **§10** `README.md`, `SECURITY.md`, `CONTRIBUTING.md` and `CHANGELOG.md` are not yet written; `release.yml`

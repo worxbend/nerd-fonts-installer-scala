@@ -42,20 +42,19 @@ All notable changes to this project are documented here. The format follows
 - **Breaking:** Removed the terminal selection mode and icon-set flag; installs are now config-file-driven only, and
   a run with no discoverable config exits 2 with the existing no-config hint.
 - **Breaking:** Single-dash long flags (`-config`, `-dry-run`) are no longer accepted; use the double-dash
-  forms (`--config`, `--dry-run`). The Go reference accepted both. A single-dash long flag is now rejected
+  forms (`--config`, `--dry-run`). A single-dash long flag is now rejected
   with exit 2 rather than being silently ignored, which previously risked `-dry-run` performing a real
   installation.
 
 ## [0.1.0] - 2026-09-11
 
-Initial release: a Scala 3 re-implementation of the Go
-[`worxbend/nerd-fonts-installer`](https://github.com/worxbend/nerd-fonts-installer) with the same
-user-facing behaviour, shipped as GraalVM native binaries that need no JVM.
+Initial release: a Scala 3 CLI that installs Nerd Fonts from a declarative config, shipped as GraalVM
+native binaries that need no JVM.
 
 ### Added
 
 - Declarative installs from a YAML, JSON or `.conf` config (`release`, `destination`, `refresh_font_cache`,
-  `families`), with Go-identical defaults, strict keys and validation messages, and the same discovery
+  `families`), with defaults, strict keys and validation messages, and the discovery
   order: `--config`, `$NERD_FONTS_INSTALLER_CONFIG`, app-named files in the working directory, then under
   `$XDG_CONFIG_HOME` or `~/.config`.
 - `--dry-run` prints the plan (URL and target per family, the font-cache line) without touching the network
@@ -70,7 +69,7 @@ user-facing behaviour, shipped as GraalVM native binaries that need no JVM.
   archive, 1 MiB manifest, 8 MiB per API page.
 - SIGINT handling that unwinds cleanly: in-flight downloads abort, temp files and staging directories are
   removed, the terminal is restored, exit 1 with `install fonts: interrupted`; a second SIGINT halts with 130.
-- Exit codes matching the Go `exitCodeFor`: 0 success; 2 for user-correctable input
+- Exit codes: 0 success; 2 for user-correctable input
   (malformed flags, no config, unknown release, no releases); 1 for everything else.
 - Every flag accepted with a single dash as well (`-config`, `-dry-run`, …); `--version` prints
   `nerd-fonts-installer <version> (<commit>, <date>)`.
@@ -83,8 +82,7 @@ user-facing behaviour, shipped as GraalVM native binaries that need no JVM.
 
 ### Changed
 
-- Compared with the Go reference, `--help` prints usage to stdout and exits 0 (Go: stderr, exit 2).
-  This is recorded in `docs/SPEC.md` and `docs/PARITY.md`.
+- `--help` prints usage to stdout and exits 0. This is recorded in `docs/SPEC.md`.
 
 [Unreleased]: https://github.com/worxbend/nerd-fonts-installer-scala/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/worxbend/nerd-fonts-installer-scala/releases/tag/v0.1.0

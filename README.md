@@ -4,7 +4,7 @@
 
 # nerd-fonts-installer-scala
 
-### Install Nerd Fonts from one YAML file — a single native binary, no JVM required.
+### Install Nerd Fonts from one config file — a single native binary, no JVM required.
 
 [![Release](https://img.shields.io/github/v/release/worxbend/nerd-fonts-installer-scala?sort=semver&label=release&color=C75CFF)](https://github.com/worxbend/nerd-fonts-installer-scala/releases)
 [![Checks](https://img.shields.io/github/actions/workflow/status/worxbend/nerd-fonts-installer-scala/checks.yml?branch=main&label=checks&color=5BF0B8)](https://github.com/worxbend/nerd-fonts-installer-scala/actions/workflows/checks.yml)
@@ -57,14 +57,11 @@ your dotfiles. **That's it.**
 </table>
 
 Reach for it when you provision dev containers, rebuild laptops, or just want the same glyphs in Starship,
-Neovim, tmux, WezTerm or Alacritty on every machine you touch — without a JVM or a Go toolchain to run it.
+Neovim, tmux, WezTerm or Alacritty on every machine you touch — without a JVM runtime to run it.
 
-[`worxbend/nerd-fonts-installer`](https://github.com/worxbend/nerd-fonts-installer) is the Go original this
-project re-implements from scratch in Scala 3, targeting the same flags, exit codes, config format and
-install layout, and shipping as a GraalVM native binary instead of a JVM jar.
-[`docs/PARITY.md`](docs/PARITY.md) is the measured, scenario-by-scenario diff between the two binaries; see
-[Differences from the Go implementation](#differences-from-the-go-implementation) below for the short list
-of gaps kept on purpose.
+This is a self-contained Scala 3 CLI that installs Nerd Fonts from a declarative config and ships as a
+GraalVM native binary instead of a JVM jar. It runs as one executable: no package manager, no runtime JVM,
+and no extra tooling required.
 
 ## Quick start
 
@@ -98,7 +95,7 @@ out/app/nativeImage.dest/native-executable --version
 ```
 
 Just want to try it without waiting for `native-image` to link? Run it on the JVM straight from source
-(arguments go directly after `app.run` — this repo's `./mill` wrapper drops everything after a bare `--`,
+(arguments belong directly after `app.run` — this repo's `./mill` wrapper drops everything after a bare `--`,
 so don't use one):
 
 ```bash
@@ -229,12 +226,11 @@ Install Nerd Fonts from a config file.
 
 <img src="assets/screenshots/cli-help.svg" alt="nerd-fonts-installer --help output" width="620" />
 
-Long options take the **double-dash spelling only**. The Go reference also accepted the single-dash long
-form (`-dry-run`); this port drops it deliberately and rejects it with exit `2`. The parser is hand-rolled
-and reflection-free, and it fails loudly on anything it doesn't recognise — so a mistyped `-dry-run` can
-never be silently swallowed and turned into a **real install**. (`zio-cli` was evaluated and rejected for
-exactly that reason: it ignores unknown and single-dash flags and still exits `0`.) The short `-h` alias for
-`--help` is kept.
+Long options take the **double-dash spelling only**. A single-dash long flag such as `-dry-run` is rejected
+with exit `2`. The parser is hand-rolled and reflection-free, and it fails loudly on anything it doesn't
+recognise — so a mistyped `-dry-run` can never be silently swallowed and turned into a **real install**.
+(`zio-cli` was evaluated and rejected for exactly that reason: it ignores unknown and single-dash flags and
+still exits `0`.) The short `-h` alias for `--help` is kept.
 
 | Flag | What it does |
 | --- | --- |
@@ -242,7 +238,7 @@ exactly that reason: it ignores unknown and single-dash flags and still exits `0
 | `--dry-run` | Print the plan (`•`/`↻` lines) without any network or filesystem write. |
 | `--font-names` | Print `# <tag>` + `families:` YAML for the selected release, then exit. |
 | `--version` | Print `nerd-fonts-installer <version> (<commit>, <date>)`. |
-| `-h`, `--help` | Print this usage and exit — the one deliberate deviation from Go, see below. |
+| `-h`, `--help` | Print this usage and exit. |
 
 ```bash
 $ nerd-fonts-installer --version
@@ -259,8 +255,7 @@ families:
 ```
 
 `--help` and `--version` print to **stdout** and exit **0** — deliberately, so `nerd-fonts-installer --help
-| less` behaves the way everything else piped through `less` does (Go's stdlib `flag` exits `2` on
-`--help`, an artefact of that package, not a design choice).
+| less` behaves the way everything else piped through `less` does.
 
 | Stream | Carries |
 | --- | --- |
@@ -412,9 +407,9 @@ up `~/Library/Fonts` automatically if you point `destination` there instead.
 
 Expected: the first `Ctrl-C` interrupts the main thread so every `finally` runs (temp zip removed, staging
 dir removed, terminal restored) and exits `1` with `install fonts: interrupted`. A **second** `Ctrl-C`
-while that cleanup is still in flight halts the process immediately with `130` — the one intentional escape
-hatch for a cleanup that itself hangs, and Go doesn't offer it. The next run removes a stale `<Family>.old`
-on its own; a leftover temp zip under `$TMPDIR` is safe to delete by hand.
+while that cleanup is still in flight halts the process immediately with `130` — the intentional escape
+hatch for a cleanup that itself hangs. The next run removes a stale `<Family>.old` on its own; a leftover
+temp zip under `$TMPDIR` is safe to delete by hand.
 
 </details>
 
@@ -517,13 +512,13 @@ these exact figures, on yours.
 
 | Concern | Choice | Why |
 | --- | --- | --- |
-| Language | Scala 3.9.0, direct-style (braceless syntax, explicit return types on public members) | `Either` + sealed error ADTs read like Go's `if err != nil` chains without the boilerplate; opaque types (`FamilyName`, `ReleaseTag`, `ByteLimit`, `Sha256Digest`, …) make an unvalidated `String` a compile error at every trust boundary |
-| Effects & concurrency | [ZIO](https://zio.dev) 2.1.26 — `ZIO`/`IO` effects, `Scope` for resource safety, `ZIO.foreachPar`/`.withParallelism` for the four-way fan-out, `.timeoutFail` for deadlines | Structured concurrency and typed errors in one effect type: the fan-out cancels its in-flight siblings on the first failure the way Go's `errgroup` does, and `Scope`/`.ensuring` guarantee every temp file and staging dir is cleaned up, even on `Ctrl-C` |
+| Language | Scala 3.9.0, direct-style (braceless syntax, explicit return types on public members) | `Either` + sealed error ADTs keep recoverable failures explicit and local; opaque types (`FamilyName`, `ReleaseTag`, `ByteLimit`, `Sha256Digest`, …) make an unvalidated `String` a compile error at every trust boundary |
+| Effects & concurrency | [ZIO](https://zio.dev) 2.1.26 — `ZIO`/`IO` effects, `Scope` for resource safety, `ZIO.foreachPar`/`.withParallelism` for the four-way fan-out, `.timeoutFail` for deadlines | Structured concurrency and typed errors in one effect type: the fan-out cancels its in-flight siblings on the first failure, and `Scope`/`.ensuring` guarantee every temp file and staging dir is cleaned up, even on `Ctrl-C` |
 | HTTP | [zio-http](https://zio.dev/zio-http) 3.11.5 client behind a streaming port | TLS-validated (`ClientSSLConfig.FromJavaxNetSsl()`) and byte-capped by the port itself, so the in-memory test fake exercises the same cap logic as production; bodies are streamed, never materialised |
 | CLI parsing | a hand-rolled, reflection-free parser on `ZIOAppDefault` | No Java reflection to configure for native-image, and it fails loudly on unknown or single-dash long flags (exit `2`). `zio-cli` was evaluated and rejected: it silently ignores unknown and single-dash flags and still exits `0`, so a mistyped `-dry-run` would perform a **real install** |
 | Build | [Mill](https://mill-build.org) 1.1.9 via the checked-in `./mill` wrapper | One `build.mill`, no plugins beyond scalafix; `jvmVersion` on every module points at `graalvm-community:25.0.2`, which Mill fetches itself — the same toolchain compiles, tests **and** links the native image |
-| Native image | GraalVM Community for JDK 25, `--no-fallback -O2 -march=compatibility --initialize-at-run-time=io.netty -H:+SharedArenaSupport` | `-march=compatibility` matches Go's `GOAMD64=v1` baseline so the binary doesn't refuse to start on a pre-2013 CPU or a default-model VM/container — GraalVM 25's AMD64 default (`x86-64-v3`) would. zio-http runs on Netty, so Netty is initialised at run time, and `-H:+SharedArenaSupport` is mandatory: without it the binary links, serves the request and prints the right answer, then **never exits**, because Netty's shutdown path hits a disabled `Arena.ofShared` |
-| Config decoding | [zio-config](https://zio.dev/zio-config) 4.1.0 (yaml, typesafe, magnolia) | One derived decoder for YAML, JSON and HOCON — JSON and HOCON both go through Typesafe Config, HOCON being a superset of JSON. Decoding is lenient: unknown keys are ignored and a scalar coerces to a one-element list |
+| Native image | GraalVM Community for JDK 25, `--no-fallback -O2 -march=compatibility --initialize-at-run-time=io.netty -H:+SharedArenaSupport` | `-march=compatibility` keeps the binary runnable on pre-2013 CPUs and default-model VMs/containers; GraalVM 25's AMD64 default (`x86-64-v3`) would refuse to start on them. zio-http runs on Netty, so Netty is initialised at run time, and `-H:+SharedArenaSupport` is mandatory: without it the binary links, serves the request and prints the right answer, then **never exits**, because Netty's shutdown path hits a disabled `Arena.ofShared` |
+| Config decoding | [zio-config](https://zio.dev/zio-config) 4.1.0 (yaml, typesafe, magnolia) | One derived decoder for YAML, JSON and HOCON — JSON and HOCON are both parsed through Typesafe Config, HOCON being a superset of JSON. Decoding is lenient: unknown keys are ignored and a scalar coerces to a one-element list |
 | Tests | [zio-test](https://zio.dev/reference/test/) 2.1.26 (+ zio-test-magnolia) | One scenario per test, named as a sentence; a generator-based property suite for the one thing that must hold for *any* input (`FamilyName.parse`) |
 | Style enforcement | `-Werror -Wunused:all -Wvalue-discard -Wnonunit-statement`, scalafix `DisableSyntax` (no `var`/`null`/`return`/`while`) | The compiler and linter enforce the invariants below instead of a code-review checklist |
 
@@ -562,39 +557,28 @@ choice was made — read it before touching `install`.
 
 ---
 
-## Differences from the Go implementation
+## Notable behaviour
 
-Parity with [`worxbend/nerd-fonts-installer`](https://github.com/worxbend/nerd-fonts-installer) is a hard
-requirement, not a nice-to-have: same exit codes, same config discovery order, same `--font-names`/dry-run
-output shapes, same atomic install layout.
-[`docs/PARITY.md`](docs/PARITY.md) records the measured comparison — both binaries run with identical
-arguments and environment, streams diffed with `diff`, scenario by scenario.
-
-| | Go | Scala |
-| --- | --- | --- |
-| Concurrency | goroutines + `errgroup` | `ZIO.foreachPar(…).withParallelism(4)` — the first failure interrupts the in-flight siblings, giving `errgroup` semantics directly |
-| Cancellation | `context.Context` | ZIO fiber interruption — SIGINT interrupts the main fiber and every finalizer runs before exit |
-| CLI parsing | `flag` (stdlib) | a hand-rolled, reflection-free parser; **double-dash long flags only** |
-| Distribution | statically-linked Go binary, tarballs + a Snap package + a project website/wiki | GraalVM native image, dynamically linked against glibc on Linux; tarballs + `install.sh` + `checksums.txt` only — no Snap package, no website, no wiki |
-
-Deviations kept on purpose (all documented, none accidental):
-
-| Deviation | Why |
-| --- | --- |
-| `--help` prints to stdout and exits 0 (Go: stderr, exit 2) | `--help \| less` is what people actually do; Go's exit 2 is an artefact of its `flag` package |
-| Single-dash long flags (`-config`, `-dry-run`) are rejected with exit 2 (Go's `flag` accepts them) | Silently accepting a mistyped `-dry-run` would risk performing a **real install**; failing loudly is safer |
-| `.conf` is parsed as HOCON, not YAML | `.conf` is HOCON's conventional extension; the Go reference has no HOCON support to diverge from |
-| Unknown config keys are ignored rather than rejected | zio-config has no strict mode; every family name is still validated by `FamilyName.parse`, so no security invariant depends on it |
-| A malformed command line prints the hand-rolled parser's own first line, not Go's `flag provided but not defined` — same exit code and stream | Not machine-parsed; the prefix, stream and exit code scripts actually check are identical |
-| A second `Ctrl-C` halts the process with 130 (Go absorbs repeats) | An intentional escape hatch for a cleanup that itself hangs |
+- `--help` prints to stdout and exits `0`, so `nerd-fonts-installer --help | less` behaves like other
+  commands piped through `less`.
+- Single-dash long flags such as `-config` and `-dry-run` are rejected with exit `2`. Silently accepting a
+  mistyped `-dry-run` would risk performing a **real install**; failing loudly is safer.
+- `.conf` is parsed as HOCON, its conventional extension. YAML config should use `.yaml` or `.yml`.
+- Unknown config keys are ignored. Every family name is still validated by `FamilyName.parse`, so no
+  security invariant depends on rejecting unknown keys, but a misspelled key falls back to its default and
+  surfaces later as a validation error.
+- A malformed command line prints the hand-rolled parser's first diagnostic line to stderr and exits `2`.
+- A second `Ctrl-C` halts the process with `130`, an intentional escape hatch for a cleanup that itself
+  hangs.
+- Distribution is a GraalVM native image, dynamically linked against glibc on Linux; releases provide
+  tarballs, `install.sh` and `checksums.txt`.
 
 ---
 
 ## Credits
 
 Fonts come from [ryanoasis/nerd-fonts](https://github.com/ryanoasis/nerd-fonts) — this project only installs
-them. The behavioural contract comes from
-[worxbend/nerd-fonts-installer](https://github.com/worxbend/nerd-fonts-installer) (Go). Built on
+them. Built on
 [ZIO](https://zio.dev) for effects and structured concurrency, [zio-http](https://zio.dev/zio-http) for the
 HTTP client, [zio-config](https://zio.dev/zio-config) for config decoding, [Mill](https://mill-build.org) for
 the build, [zio-test](https://zio.dev/reference/test/) for tests, and [GraalVM](https://www.graalvm.org)
