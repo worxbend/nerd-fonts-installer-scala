@@ -12,6 +12,7 @@ import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import zio.IO
 import zio.ZIO
+import zio.http.URL
 import zio.test.Spec
 import zio.test.TestEnvironment
 import zio.test.ZIOSpecDefault
@@ -29,7 +30,12 @@ import zio.test.assertTrue
 object ZioHttpClientSuite extends ZIOSpecDefault:
   private val limit = ByteLimit.bytes(64)
 
-  final private case class Served(status: Int, body: String, contentLength: Option[Long] = None)
+  final private case class Served(
+      status: Int,
+      body: String,
+      contentLength: Option[Long] = None,
+      location: Option[String] = None,
+  )
 
   private def withServer[A](respond: HttpExchange => Served)(
       test: (HttpClient, Url) => IO[Nothing, A],
@@ -49,11 +55,14 @@ object ZioHttpClientSuite extends ZIOSpecDefault:
         served.contentLength.foreach(length =>
           exchange.getResponseHeaders.set("Content-Length", length.toString),
         )
+        served.location.foreach(value => exchange.getResponseHeaders.set("Location", value))
         exchange.sendResponseHeaders(served.status, if bytes.isEmpty then -1 else bytes.length.toLong)
         Using.resource(exchange.getResponseBody)(_.write(bytes)),
     )
     server.start()
     server
+
+  private def url(raw: String): URL = URL.decode(raw).getOrElse(throw IllegalArgumentException(raw))
 
   override def spec: Spec[TestEnvironment, Any] = suite("ZioHttpClient")(
     test("a 200 body is delivered and decoded"):
@@ -108,5 +117,65 @@ object ZioHttpClientSuite extends ZIOSpecDefault:
       for
         client <- ZIO.service[HttpClient]
         result <- client.getString(HttpRequest(Url("not a url")), limit).either
-      yield assertTrue(result.left.exists(_.isInstanceOf[HttpError.Transport])),
+      yield assertTrue(result.left.exists(_.isInstanceOf[HttpError.Transport]))
+    ,
+    test("a redirect is followed to the final body"):
+      val respond: HttpExchange => Served = exchange =>
+        if exchange.getRequestURI.getPath == "/asset" then Served(302, "", location = Some("/moved"))
+        else Served(200, "arrived")
+      withServer(respond): (client, url) =>
+        client.getString(HttpRequest(url), limit).either.map(result => assertTrue(result == Right("arrived")))
+    ,
+    test("a relative Location is resolved against the current URL"):
+      val respond: HttpExchange => Served = exchange =>
+        if exchange.getRequestURI.getPath == "/asset" then Served(302, "", location = Some("sibling"))
+        else Served(200, exchange.getRequestURI.getPath)
+      withServer(respond): (client, url) =>
+        client
+          .getString(HttpRequest(url), limit)
+          .either
+          .map(result => assertTrue(result == Right("/sibling")))
+    ,
+    test("a redirect chain longer than the cap stops instead of looping"):
+      // Every hop redirects, so only the cap can end this. The last 3xx is delivered as a Status error.
+      withServer(_ => Served(302, "", location = Some("/next"))): (client, url) =>
+        client
+          .getString(HttpRequest(url), limit)
+          .either
+          .map(result => assertTrue(result == Left(HttpError.Status(302))))
+    ,
+    test("a redirect without a Location header is delivered as its status"):
+      withServer(_ => Served(302, "")): (client, url) =>
+        client
+          .getString(HttpRequest(url), limit)
+          .either
+          .map(result => assertTrue(result == Left(HttpError.Status(302))))
+    ,
+    test("an https response may not redirect to plain http"):
+      ZIO.succeed(
+        assertTrue(
+          ZioHttpClient.downgrades(url("https://github.com/a"), url("http://evil.example/a")),
+          // A same-host downgrade is still a downgrade.
+          ZioHttpClient.downgrades(url("https://github.com/a"), url("http://github.com/a")),
+        ),
+      )
+    ,
+    test("an upgrade and a same-scheme hop are both allowed"):
+      ZIO.succeed(
+        assertTrue(
+          !ZioHttpClient.downgrades(url("http://example.test/a"), url("https://example.test/a")),
+          !ZioHttpClient.downgrades(url("https://github.com/a"), url("https://objects.example/a")),
+        ),
+      )
+    ,
+    test("credentials travel only within one origin"):
+      ZIO.succeed(
+        assertTrue(
+          ZioHttpClient.sameOrigin(url("https://github.com/a"), url("https://github.com/b")),
+          !ZioHttpClient.sameOrigin(url("https://github.com/a"), url("https://objects.example/b")),
+          // A scheme change alone is a different origin, which the host-only check used to miss.
+          !ZioHttpClient.sameOrigin(url("https://github.com/a"), url("http://github.com/b")),
+          !ZioHttpClient.sameOrigin(url("https://github.com:443/a"), url("https://github.com:8443/b")),
+        ),
+      ),
   ).provideLayerShared(ZioHttpClient.live)
