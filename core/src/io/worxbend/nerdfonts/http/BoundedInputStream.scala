@@ -1,9 +1,9 @@
 package io.worxbend.nerdfonts.http
 
+import io.worxbend.nerdfonts.discard
+
 import java.io.InputStream
 import java.util.concurrent.atomic.AtomicLong
-
-import ox.discard
 
 /**
  * Caps how many bytes can be read from an underlying stream, the same way Go's `io.LimitReader(body, max+1)`
@@ -13,9 +13,10 @@ import ox.discard
  * that [[exceeded]] can tell "exactly at the limit" from "over it" without buffering anything. In
  * `Overflow.Truncate` mode the stream reports EOF at the limit and the excess is never read.
  *
- * Both the JDK adapter and the test fake wrap bodies in this class, so the cap logic exercised by tests is
- * the cap logic that runs in production. The counter is an `AtomicLong` only to avoid a mutable field;
- * a stream is used from one thread at a time.
+ * The HTTP port caps its own bodies with a chunk-aware `ZStream` operator instead (see
+ * [[ResponseDelivery.cappedBody]]); this class now backs only [[io.worxbend.nerdfonts.install.ArchiveExtractor]],
+ * which reads a local, already-downloaded zip through a plain synchronous `InputStream`. The counter is an
+ * `AtomicLong` only to avoid a mutable field; a stream is used from one thread at a time.
  */
 final class BoundedInputStream(underlying: InputStream, limit: ByteLimit, overflow: Overflow)
     extends InputStream:

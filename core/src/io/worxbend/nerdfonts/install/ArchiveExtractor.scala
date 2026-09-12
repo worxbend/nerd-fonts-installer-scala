@@ -2,6 +2,7 @@ package io.worxbend.nerdfonts.install
 
 import io.worxbend.nerdfonts.Diagnostics
 import io.worxbend.nerdfonts.TerminalSafe
+import io.worxbend.nerdfonts.discard
 import io.worxbend.nerdfonts.http.BoundedInputStream
 import io.worxbend.nerdfonts.http.ByteLimit
 import io.worxbend.nerdfonts.http.Overflow
@@ -17,10 +18,8 @@ import scala.annotation.tailrec
 import scala.util.Try
 import scala.util.Using
 
-import ox.discard
-import ox.either
-import ox.either.catching
-import ox.either.ok
+import zio.IO
+import zio.ZIO
 
 /**
  * Extracts the font files of a downloaded archive into a staging directory.
@@ -35,19 +34,42 @@ import ox.either.ok
 object ArchiveExtractor:
   private val fontExtensions = Set("ttf", "otf", "ttc")
 
-  def extract(zip: os.Path, into: os.Path, limits: SizeLimits): Either[ArchiveError, ExtractedCount] =
-    open(zip).flatMap: entries =>
-      Using.resource(entries)(stream => extractAll(Session(zip, into, limits, stream), Progress.start))
+  /**
+   * Extracts on the blocking pool: the whole algorithm below is a synchronous, local-filesystem walk that
+   * never needs to be interrupted mid-entry, so it runs as a single blocking action rather than a
+   * fine-grained ZIO pipeline. Any exception escaping the (already carefully caught, see [[writeFont]])
+   * internals is a defect, matching the unhandled-exception behaviour the direct-style code had if closing
+   * the archive itself failed.
+   */
+  def extract(zip: os.Path, into: os.Path, limits: SizeLimits): IO[ArchiveError, ExtractedCount] =
+    ZIO.attemptBlockingIO(extractSync(zip, into, limits)).orDie.absolve
+
+  private def extractSync(
+      zip: os.Path,
+      into: os.Path,
+      limits: SizeLimits,
+  ): Either[ArchiveError, ExtractedCount] = open(zip).flatMap: entries =>
+    Using.resource(entries)(stream => extractAll(Session(zip, into, limits, stream), Progress.start))
+
+  /**
+   * A minimal `ox.either.catching[IOException]` replacement: runs `block`, turning only an `IOException`
+   * into a `Left`.
+   */
+  private def attemptIO[A](block: => A): Either[IOException, A] =
+    try Right(block)
+    catch case error: IOException => Left(error)
+
+  /** As [[attemptIO]], for the one call site whose failure is an `IllegalArgumentException` instead. */
+  private def attemptPathArg[A](block: => A): Either[IllegalArgumentException, A] =
+    try Right(block)
+    catch case error: IllegalArgumentException => Left(error)
 
   // `NOFOLLOW_LINKS`: the temp zip was already digest-verified by path before this re-open, so a symlink
   // swapped into that name in the meantime (a shared, non-sticky `$TMPDIR`) must fail loudly rather than be
   // followed into extracting an unverified file.
-  private def open(zip: os.Path): Either[ArchiveError, ZipInputStream] = ZipInputStream(
-    Files.newInputStream(zip.toNIO, LinkOption.NOFOLLOW_LINKS),
-  )
-    .catching[IOException]
-    .left
-    .map(error => ArchiveError.Open(zip, Diagnostics.describe(error)))
+  private def open(zip: os.Path): Either[ArchiveError, ZipInputStream] =
+    attemptIO(ZipInputStream(Files.newInputStream(zip.toNIO, LinkOption.NOFOLLOW_LINKS))).left
+      .map(error => ArchiveError.Open(zip, Diagnostics.describe(error)))
 
   @tailrec
   private def extractAll(session: Session, progress: Progress): Either[ArchiveError, ExtractedCount] =
@@ -60,22 +82,20 @@ object ArchiveExtractor:
 
   // A header that cannot be read is reported as an unopenable archive: Go's `zip.OpenReader` validates the
   // whole directory up front, so this is the closest equivalent for a corrupt file.
-  private def nextEntry(session: Session): Either[ArchiveError, Option[ZipEntry]] = Option(
-    session.entries.getNextEntry,
-  )
-    .catching[IOException]
-    .left
-    .map(error => ArchiveError.Open(session.zip, Diagnostics.describe(error)))
+  private def nextEntry(session: Session): Either[ArchiveError, Option[ZipEntry]] =
+    attemptIO(Option(session.entries.getNextEntry)).left
+      .map(error => ArchiveError.Open(session.zip, Diagnostics.describe(error)))
 
   private def handle(session: Session, entry: ZipEntry, progress: Progress): Either[ArchiveError, Progress] =
     val base = baseName(entry.getName)
     if entry.isDirectory || !isFontFile(base) then Right(progress)
     else
-      either:
-        refuseDeclared(session, entry, declaredSize(entry), progress).ok()
-        val next = progress.add(writeEntry(session, entry, base).ok())
-        refuseTotal(session, next.totalBytes).ok()
-        next
+      for
+        _       <- refuseDeclared(session, entry, declaredSize(entry), progress)
+        written <- writeEntry(session, entry, base)
+        next     = progress.add(written)
+        _       <- refuseTotal(session, next.totalBytes)
+      yield next
 
   private def finished(zip: os.Path, progress: Progress): Either[ArchiveError, ExtractedCount] =
     if progress.extracted == 0 then Left(ArchiveError.NoFontFiles(zip))
@@ -107,25 +127,24 @@ object ArchiveExtractor:
   // Works entirely in the entry-error domain; the safety-net close in `finally` covers the early exits, the
   // explicit `close` above it is the one whose error matters.
   private def writeFont(session: Session, name: String, base: String): Either[ArchiveEntryError, Long] =
-    either:
-      val target = targetOf(session.into, base).left.map(ArchiveEntryError.InvalidName(name, _)).ok()
-      val out    = openOutput(target).ok()
-      try
-        val written = copyCapped(session, out, target, name).ok()
-        sync(out, target).ok()
-        close(out, target).ok()
-        written
-      finally Try(out.close()).discard
+    targetOf(session.into, base).left
+      .map(ArchiveEntryError.InvalidName(name, _))
+      .flatMap: target =>
+        openOutput(target).flatMap: out =>
+          try
+            for
+              written <- copyCapped(session, out, target, name)
+              _       <- sync(out, target)
+              _       <- close(out, target)
+            yield written
+          finally Try(out.close()).discard
 
   private def targetOf(into: os.Path, base: String): Either[String, os.Path] =
-    (into / base).catching[IllegalArgumentException].left.map(Diagnostics.describe)
+    attemptPathArg(into / base).left.map(Diagnostics.describe)
 
-  private def openOutput(target: os.Path): Either[ArchiveEntryError, FileOutputStream] = FileOutputStream(
-    target.toIO,
-  )
-    .catching[IOException]
-    .left
-    .map(error => ArchiveEntryError.Create(target, Diagnostics.describe(error)))
+  private def openOutput(target: os.Path): Either[ArchiveEntryError, FileOutputStream] =
+    attemptIO(FileOutputStream(target.toIO)).left
+      .map(error => ArchiveEntryError.Create(target, Diagnostics.describe(error)))
 
   // The cap is `limit + 1` so an entry that runs past its declared size is detected without buffering.
   private def copyCapped(
@@ -136,22 +155,18 @@ object ArchiveExtractor:
   ): Either[ArchiveEntryError, Long] =
     val limit  = session.limits.fontFile
     val capped = BoundedInputStream(session.entries, limit, Overflow.Reject)
-    capped.transferTo(out).catching[IOException] match
+    attemptIO(capped.transferTo(out)) match
       case Left(error)                                 => Left(ArchiveEntryError.Copy(name, target, Diagnostics.describe(error)))
       case Right(written) if limit.exceededBy(written) => Left(ArchiveEntryError.Oversize(name, limit))
       case Right(written)                              => Right(written)
 
-  private def sync(out: FileOutputStream, target: os.Path): Either[ArchiveEntryError, Unit] = out.getFD
-    .sync()
-    .catching[IOException]
-    .left
-    .map(error => ArchiveEntryError.Flush(target, Diagnostics.describe(error)))
+  private def sync(out: FileOutputStream, target: os.Path): Either[ArchiveEntryError, Unit] =
+    attemptIO(out.getFD.sync()).left
+      .map(error => ArchiveEntryError.Flush(target, Diagnostics.describe(error)))
 
-  private def close(out: FileOutputStream, target: os.Path): Either[ArchiveEntryError, Unit] = out
-    .close()
-    .catching[IOException]
-    .left
-    .map(error => ArchiveEntryError.Finalize(target, Diagnostics.describe(error)))
+  private def close(out: FileOutputStream, target: os.Path): Either[ArchiveEntryError, Unit] =
+    attemptIO(out.close()).left
+      .map(error => ArchiveEntryError.Finalize(target, Diagnostics.describe(error)))
 
   // Go's `filepath.Base` / `filepath.Ext` on a POSIX host: only `/` separates, a backslash is an ordinary
   // character, and the extension is whatever follows the last dot of the last element.

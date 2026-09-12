@@ -5,14 +5,18 @@ import io.worxbend.nerdfonts.process.ProcessError
 import io.worxbend.nerdfonts.process.ProcessRunner
 import io.worxbend.nerdfonts.process.ProcessSpec
 
+import zio.IO
+import zio.UIO
+import zio.ZIO
+
 /**
  * The font cache as a port, so the engine can be tested without `fc-cache` and so the "not installed" case
  * is a value the engine turns into a warning rather than a failure (Go: `exec.LookPath` before `Run`).
  */
 trait FontCacheRefresher:
-  def availability: FontCacheAvailability
+  def availability: UIO[FontCacheAvailability]
 
-  def refresh(root: os.Path): Either[FontCacheError, Unit]
+  def refresh(root: os.Path): IO[FontCacheError, Unit]
 
 /** Whether `fc-cache` can be run at all; a two-case enum so the engine cannot misread a bare flag. */
 enum FontCacheAvailability:
@@ -32,15 +36,16 @@ enum FontCacheError:
  * inherited, so its output reaches the user's terminal exactly as under Go's `exec.Command`.
  */
 final class FcCacheRefresher(processes: ProcessRunner) extends FontCacheRefresher:
-  def availability: FontCacheAvailability =
-    if processes.lookPath(FcCacheRefresher.program).isDefined then FontCacheAvailability.Available
-    else FontCacheAvailability.Unavailable
+  def availability: UIO[FontCacheAvailability] = processes
+    .lookPath(FcCacheRefresher.program)
+    .map(resolved =>
+      if resolved.isDefined then FontCacheAvailability.Available else FontCacheAvailability.Unavailable,
+    )
 
-  def refresh(root: os.Path): Either[FontCacheError, Unit] =
-    processes.run(ProcessSpec(Vector(FcCacheRefresher.program, "-f", root.toString))) match
-      case Left(error)                            => Left(FontCacheError.Launch(error))
-      case Right(result) if result.exit.isSuccess => Right(())
-      case Right(result)                          => Left(FontCacheError.Exit(result.exit))
+  def refresh(root: os.Path): IO[FontCacheError, Unit] = processes
+    .run(ProcessSpec(Vector(FcCacheRefresher.program, "-f", root.toString)))
+    .mapError(FontCacheError.Launch(_))
+    .flatMap(result => if result.exit.isSuccess then ZIO.unit else ZIO.fail(FontCacheError.Exit(result.exit)))
 
 object FcCacheRefresher:
   val program: String = "fc-cache"

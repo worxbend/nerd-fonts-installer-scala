@@ -4,6 +4,10 @@ import io.worxbend.nerdfonts.Diagnostics
 
 import scala.util.Try
 
+import zio.IO
+import zio.UIO
+import zio.ZIO
+
 /**
  * The ambient process environment: variables plus the two directories that path expansion and config
  * discovery depend on.
@@ -11,19 +15,23 @@ import scala.util.Try
  * Nothing below the composition root reads `sys.env` or `sys.props` directly. Those are global mutable
  * state: code that reads them cannot be tested without mutating the whole JVM, and two such tests cannot run
  * in parallel. Everything that needs the environment receives one of these instead.
+ *
+ * Every read is a `ZIO` effect, not because a variable lookup itself is slow, but because it is a read of
+ * mutable process-wide state (an effect in the same sense a clock read is), and because `workingDirectory`'s
+ * `os.pwd` is a genuine blocking syscall that must run on the blocking pool.
  */
 trait Environment:
   /** The value of an environment variable, or `None` when it is not set. */
-  def variable(name: String): Option[String]
+  def variable(name: String): UIO[Option[String]]
 
   /** The value of a JVM system property, or `None` when it is not set (e.g. the `java.io.tmpdir` fallback). */
-  def property(name: String): Option[String]
+  def property(name: String): UIO[Option[String]]
 
   /** The current user's home directory, or `None` when the process cannot determine one (Go: `os.UserHomeDir` error). */
-  def homeDirectory: Option[os.Path]
+  def homeDirectory: UIO[Option[os.Path]]
 
-  /** The directory the process was started in; a `Left` mirrors Go's `os.Getwd` failing. */
-  def workingDirectory: Either[EnvironmentError, os.Path]
+  /** The directory the process was started in; a failure mirrors Go's `os.Getwd` failing. */
+  def workingDirectory: IO[EnvironmentError, os.Path]
 
 object Environment:
   /**
@@ -34,14 +42,15 @@ object Environment:
    * instead of being masked by a home the reference would never have found.
    */
   object System extends Environment:
-    def variable(name: String): Option[String] = sys.env.get(name)
+    def variable(name: String): UIO[Option[String]] = ZIO.succeed(sys.env.get(name))
 
-    def property(name: String): Option[String] = sys.props.get(name)
+    def property(name: String): UIO[Option[String]] = ZIO.succeed(sys.props.get(name))
 
-    def homeDirectory: Option[os.Path] = homeFrom(variable("HOME"))
+    def homeDirectory: UIO[Option[os.Path]] = variable("HOME").map(homeFrom)
 
-    def workingDirectory: Either[EnvironmentError, os.Path] =
-      Try(os.pwd).toEither.left.map(error => EnvironmentError.NoWorkingDirectory(Diagnostics.describe(error)))
+    def workingDirectory: IO[EnvironmentError, os.Path] = ZIO
+      .attemptBlockingIO(os.pwd)
+      .mapError(error => EnvironmentError.NoWorkingDirectory(Diagnostics.describe(error)))
 
   // A pure projection of the `$HOME` rule, kept apart from `sys.env` so a test can drive both cases (set,
   // blank or unset) without mutating global process state.
@@ -58,10 +67,10 @@ object Environment:
     val home    = homeDirectory
     val working = workingDirectory
     new Environment:
-      def variable(name: String): Option[String]              = variables.get(name)
-      def property(name: String): Option[String]              = properties.get(name)
-      def homeDirectory: Option[os.Path]                      = home
-      def workingDirectory: Either[EnvironmentError, os.Path] = working
+      def variable(name: String): UIO[Option[String]]     = ZIO.succeed(variables.get(name))
+      def property(name: String): UIO[Option[String]]     = ZIO.succeed(properties.get(name))
+      def homeDirectory: UIO[Option[os.Path]]             = ZIO.succeed(home)
+      def workingDirectory: IO[EnvironmentError, os.Path] = ZIO.fromEither(working)
 
 /** Why the environment could not answer; the text is the platform's own wording, not a parity target. */
 enum EnvironmentError:

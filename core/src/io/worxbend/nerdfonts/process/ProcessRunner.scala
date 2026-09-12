@@ -1,14 +1,17 @@
 package io.worxbend.nerdfonts.process
 
+import zio.IO
+import zio.UIO
+
 /**
  * The one way this application starts a subprocess (`fc-cache`, `stty`). Everything goes through an argv
  * vector, never a shell, so a destination path containing `$` or a space cannot become shell syntax.
  */
 trait ProcessRunner:
-  def run(spec: ProcessSpec): Either[ProcessError, ProcessResult]
+  def run(spec: ProcessSpec): IO[ProcessError, ProcessResult]
 
   /** Go's `exec.LookPath`: where `name` would resolve on `PATH`, or `None` when it is not installed. */
-  def lookPath(name: String): Option[os.Path]
+  def lookPath(name: String): UIO[Option[os.Path]]
 
 /**
  * What to run and how its three streams are wired. The defaults inherit the parent's streams, which is

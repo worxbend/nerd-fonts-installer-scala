@@ -2,6 +2,8 @@ package io.worxbend.nerdfonts.releases
 
 import io.worxbend.nerdfonts.fonts.ReleaseTag
 
+import zio.IO
+
 /**
  * One usable Nerd Fonts release: a display name, its tag and the font families it ships.
  *
@@ -13,4 +15,4 @@ final case class Release(name: String, tag: ReleaseTag, families: Vector[String]
 
 /** Where releases come from; the production adapter is [[GitHubReleaseCatalogue]]. */
 trait ReleaseCatalogue:
-  def releases(): Either[ReleaseError, Vector[Release]]
+  def releases(): IO[ReleaseError, Vector[Release]]

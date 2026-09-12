@@ -2,7 +2,7 @@
 
 set -e
 
-if [ -z "${DEFAULT_MILL_VERSION}" ] ; then DEFAULT_MILL_VERSION="1.1.7"; fi
+if [ -z "${DEFAULT_MILL_VERSION}" ] ; then DEFAULT_MILL_VERSION="1.1.9"; fi
 
 if [ -z "${GITHUB_RELEASE_CDN}" ] ; then GITHUB_RELEASE_CDN=""; fi
 
@@ -174,11 +174,11 @@ if [ ! -s "${MILL}" ] || [ "$MILL_TEST_DRY_RUN_LAUNCHER_SCRIPT" = "1" ] ; then
   # The repository pins both the Mill version and the digest of every launcher variant used by
   # supported build hosts. Updating Mill therefore requires an intentional digest update here.
   case "${MILL_VERSION}${ARTIFACT_SUFFIX}" in
-    1.1.7) EXPECTED_MILL_SHA256="49c1c575ad44efba1b9103ca1d6042624ef341aad9d8f4cb58fbfc56cf930e0d" ;;
-    1.1.7-native-linux-amd64) EXPECTED_MILL_SHA256="d8648b12f453947f503f3906339dac622261e8ea974339ff574b0f43e480dfdb" ;;
-    1.1.7-native-linux-aarch64) EXPECTED_MILL_SHA256="96ad26474945865ec4498f8133a915463c88ddba59392c23f9b4a8dfb74091a2" ;;
-    1.1.7-native-mac-amd64) EXPECTED_MILL_SHA256="b003acea0aa81fa4d65391ade3c1113bb99b2c7c43571c39b7bc1a5657341875" ;;
-    1.1.7-native-mac-aarch64) EXPECTED_MILL_SHA256="b50a55d06a1ef4eab5eab9b5e266af4b910b97bcf806cbbb24155b6c581ab8f1" ;;
+    1.1.9) EXPECTED_MILL_SHA256="e791ccfcfee9c0d299d07474d9bfcbfcbebf1181323be601220c8a823062ab99" ;;
+    1.1.9-native-linux-amd64) EXPECTED_MILL_SHA256="9712a25ebc340f5e41aa9ce97bd486309fa616850e6c874ce1ae77328b4f6bad" ;;
+    1.1.9-native-linux-aarch64) EXPECTED_MILL_SHA256="7dc992ba9850fde59e16f9e38eef754f0e3e9f862f93336866b0722e403601e4" ;;
+    1.1.9-native-mac-amd64) EXPECTED_MILL_SHA256="ecaa0fc97285301791ae2c4ad60a23171ef6702ea967418bc805d4e41f8a0b77" ;;
+    1.1.9-native-mac-aarch64) EXPECTED_MILL_SHA256="f9cdcaacfa2523ae095735c5ada78a07c334defbba828dc0a2f6ef753f99d405" ;;
     *)
       echo "No pinned SHA-256 digest for Mill ${MILL_VERSION}${ARTIFACT_SUFFIX}" 1>&2
       rm -f "${MILL_TEMP_DOWNLOAD_FILE}"

@@ -1,8 +1,8 @@
 package io.worxbend.nerdfonts.install
 
-import scala.collection.mutable.ArrayBuffer
+import io.worxbend.nerdfonts.discard
 
-import ox.discard
+import scala.collection.mutable.ArrayBuffer
 
 /**
  * A deliberately unsynchronised sink: the `InstallEventSink` contract promises one caller at a time, and a

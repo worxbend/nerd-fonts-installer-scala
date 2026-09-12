@@ -1,8 +1,12 @@
 package io.worxbend.nerdfonts.process
 
-import java.util.concurrent.atomic.AtomicReference
+import io.worxbend.nerdfonts.discard
 
-import ox.discard
+import zio.IO
+import zio.UIO
+import zio.ZIO
+
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * A scripted `ProcessRunner` for tests in every module: the first script whose `prefix` matches the start
@@ -18,14 +22,16 @@ final class FakeProcessRunner(
   /** Every spec passed to `run`, in call order. */
   def calls: Vector[ProcessSpec] = recorded.get()
 
-  def run(spec: ProcessSpec): Either[ProcessError, ProcessResult] =
-    recorded.updateAndGet(_ :+ spec).discard
+  def run(spec: ProcessSpec): IO[ProcessError, ProcessResult] = ZIO.succeed(
+    recorded.updateAndGet(_ :+ spec).discard,
+  ) *> ZIO.fromEither(
     scripts
       .find(script => spec.command.startsWith(script.prefix))
       .map(_.result)
-      .getOrElse(Left(ProcessError.NotFound(spec.program)))
+      .getOrElse(Left(ProcessError.NotFound(spec.program))),
+  )
 
-  def lookPath(name: String): Option[os.Path] = executables.get(name)
+  def lookPath(name: String): UIO[Option[os.Path]] = ZIO.succeed(executables.get(name))
 
 object FakeProcessRunner:
   /** One canned answer: applies to every command that starts with `prefix`. */

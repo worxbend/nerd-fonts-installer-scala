@@ -1,8 +1,5 @@
 package io.worxbend.nerdfonts.fonts
 
-import ox.either
-import ox.either.ok
-
 /**
  * A validated install configuration: what to install, where, and whether to refresh the font cache.
  *
@@ -27,11 +24,12 @@ object InstallConfig:
       destination: String,
       refreshFontCache: RefreshFontCache,
       families: Vector[String],
-  ): Either[ConfigValidationError, InstallConfig] = either:
-    val tag   = ReleaseTag.parse(release).toRight(ConfigValidationError.ReleaseRequired).ok()
-    val root  = DestinationPath.parse(destination).toRight(ConfigValidationError.DestinationRequired).ok()
-    val names = validatedFamilies(families).ok()
-    InstallConfig(ReleaseSelector.of(tag), root, refreshFontCache, names)
+  ): Either[ConfigValidationError, InstallConfig] =
+    for
+      tag   <- ReleaseTag.parse(release).toRight(ConfigValidationError.ReleaseRequired)
+      root  <- DestinationPath.parse(destination).toRight(ConfigValidationError.DestinationRequired)
+      names <- validatedFamilies(families)
+    yield InstallConfig(ReleaseSelector.of(tag), root, refreshFontCache, names)
 
   private def validatedFamilies(raw: Vector[String]): Either[ConfigValidationError, Vector[FamilyName]] =
     if raw.isEmpty then Left(ConfigValidationError.NoFamilies)

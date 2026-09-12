@@ -1,4 +1,4 @@
-//| mill-version: 1.1.7
+//| mill-version: 1.1.9
 //| mvnDeps: ["com.goyeau::mill-scalafix::0.6.2"]
 package build
 
@@ -12,28 +12,38 @@ import mill.scalalib.scalafmt.ScalafmtModule
 
 object Versions:
   val project = "0.1.0"
-  val scala   = "3.8.4"
+  val scala   = "3.9.0"
   // GraalVM Community for JDK 25 ships `native-image`, so one toolchain compiles, tests and links the
   // binary on every CI runner without a separate GraalVM setup step.
-  val graalvm        = "graalvm-community:25.0.1"
-  val ox             = "1.0.6"
-  val osLib          = "0.11.8"
-  val fansi          = "0.5.1"
-  val upickle        = "4.4.3"
-  val scalaYaml      = "0.3.3"
-  val picocli        = "4.7.7"
-  val munit          = "1.3.6"
-  val munitScalacheck = "1.3.1"
+  val graalvm   = "graalvm-community:25.0.2"
+  val zio       = "2.1.26"
+  val zioConfig = "4.1.0"
+  val zioHttp   = "3.11.5"
+  val zioJson   = "1.1.0"
+  val osLib     = "0.11.8"
+  val fansi     = "0.5.1"
 
 object Deps:
-  val ox              = mvn"com.softwaremill.ox::core:${Versions.ox}"
-  val osLib           = mvn"com.lihaoyi::os-lib:${Versions.osLib}"
-  val fansi           = mvn"com.lihaoyi::fansi:${Versions.fansi}"
-  val upickle         = mvn"com.lihaoyi::upickle:${Versions.upickle}"
-  val scalaYaml       = mvn"org.virtuslab::scala-yaml:${Versions.scalaYaml}"
-  val picocli         = mvn"info.picocli:picocli:${Versions.picocli}"
-  val munit           = mvn"org.scalameta::munit:${Versions.munit}"
-  val munitScalacheck = mvn"org.scalameta::munit-scalacheck:${Versions.munitScalacheck}"
+  // Scala 3.8 renamed the standard library artifact from `scala3-library_3` to `scala-library`. Some ZIO
+  // artifacts still declare the old coordinate, which would otherwise put a second, older copy of the Scala
+  // library on the test classpath, shadowing the one we compiled against.
+  private val staleScalaLibrary = ("org.scala-lang", "scala3-library_3")
+
+  val zio        = mvn"dev.zio::zio:${Versions.zio}"
+  val zioStreams = mvn"dev.zio::zio-streams:${Versions.zio}"
+  val zioJson    = mvn"dev.zio::zio-json:${Versions.zioJson}"
+  val zioHttp    = mvn"dev.zio::zio-http:${Versions.zioHttp}"
+  val zioConfig  = mvn"dev.zio::zio-config:${Versions.zioConfig}"
+  // YAML has its own provider; HOCON *and* JSON both go through Typesafe Config, because HOCON is a
+  // superset of JSON. See `ConfigFormat` for the extension mapping.
+  val zioConfigYaml     = mvn"dev.zio::zio-config-yaml:${Versions.zioConfig}"
+  val zioConfigTypesafe = mvn"dev.zio::zio-config-typesafe:${Versions.zioConfig}"
+  val zioConfigMagnolia = mvn"dev.zio::zio-config-magnolia:${Versions.zioConfig}"
+  val osLib             = mvn"com.lihaoyi::os-lib:${Versions.osLib}"
+  val fansi             = mvn"com.lihaoyi::fansi:${Versions.fansi}"
+  val zioTest         = mvn"dev.zio::zio-test:${Versions.zio}".exclude(staleScalaLibrary)
+  val zioTestSbt      = mvn"dev.zio::zio-test-sbt:${Versions.zio}".exclude(staleScalaLibrary)
+  val zioTestMagnolia = mvn"dev.zio::zio-test-magnolia:${Versions.zio}".exclude(staleScalaLibrary)
 
 /** One JVM for everything: compiling, testing and `native-image`. */
 object GraalvmWorker extends JvmWorkerModule:
@@ -60,25 +70,25 @@ trait NerdFontsModule extends ScalaModule, ScalafmtModule, ScalafixModule:
   def forkArgs = Seq(s"-Dnerdfonts.repoRoot=${mill.api.BuildCtx.workspaceRoot}")
 
   trait NerdFontsTests extends ScalaTests, ScalafmtModule, ScalafixModule:
-    def mvnDeps       = Seq(Deps.munit, Deps.munitScalacheck)
-    def testFramework = "munit.Framework"
+    def mvnDeps       = Seq(Deps.zioTest, Deps.zioTestSbt, Deps.zioTestMagnolia)
+    def testFramework = "zio.test.sbt.ZTestFramework"
     def forkArgs      = Seq(s"-Dnerdfonts.repoRoot=${mill.api.BuildCtx.workspaceRoot}")
 
 /** Domain, ports and the install engine. No CLI or terminal code. */
 object core extends NerdFontsModule:
-  def mvnDeps = Seq(Deps.ox, Deps.osLib, Deps.upickle)
+  def mvnDeps = Seq(Deps.zio, Deps.zioStreams, Deps.zioJson, Deps.zioHttp, Deps.osLib)
   object test extends NerdFontsTests
 
-/** Config file decoding (YAML / JSON) and discovery. */
+/** Config file decoding (YAML / HOCON / JSON) and discovery. */
 object config extends NerdFontsModule:
   def moduleDeps = Seq(core)
-  def mvnDeps    = Seq(Deps.scalaYaml, Deps.upickle)
+  def mvnDeps    = Seq(Deps.zioConfig, Deps.zioConfigYaml, Deps.zioConfigTypesafe, Deps.zioConfigMagnolia)
   object test extends NerdFontsTests
 
-/** Picocli command surface, exit codes and application wiring. */
+/** Argument parsing, exit codes and application wiring. */
 object cli extends NerdFontsModule:
   def moduleDeps = Seq(core, config)
-  def mvnDeps    = Seq(Deps.picocli, Deps.fansi)
+  def mvnDeps    = Seq(Deps.fansi)
 
   def generatedSources = Task:
     super.generatedSources() ++ Seq(buildInfoSources())
@@ -127,6 +137,19 @@ object app extends NerdFontsModule, NativeImageModule:
     // `GOAMD64=v1`.
     "-march=compatibility",
     "--initialize-at-build-time=scala",
+    // zio-http runs on Netty, which must not be initialised into the image heap.
+    "--initialize-at-run-time=io.netty",
+    // Netty 4.2's `AdaptivePoolingAllocator` allocates through `java.lang.foreign.Arena.ofShared`, which
+    // native-image gates off by default. Without this flag the binary links successfully, serves the request
+    // correctly, prints the right answer -- and then *never exits*: `UnsupportedFeatureError: Support for
+    // Arena.ofShared is not active` is thrown on every event-loop thread during Netty's shutdown path
+    // (`FastThreadLocal.removeAll` -> `AdaptivePoolingAllocator.onRemoval` -> `ArenaImpl.close`). The fiber
+    // never sees an error, so nothing can catch it. Two consequences, both measured:
+    //   * a CI check that greps stdout PASSES on a broken binary -- it must assert the exit code instead;
+    //   * the hung process ignores SIGTERM, so any timeout guarding it has to escalate to SIGKILL.
+    // Setting `-Dio.netty.allocator.type` here does not help: build-time `-D` configures the image builder,
+    // not the resulting binary. See scripts/ci/native-network-smoke.sh, which is the gate for this.
+    "-H:+SharedArenaSupport",
     "-H:+ReportExceptionStackTraces",
     // `sun.misc.Unsafe` reads its memory-access policy once, from the VM's saved startup properties, into a
     // `static final`; the class initialises inside the image builder, so the binary carries the builder JVM's

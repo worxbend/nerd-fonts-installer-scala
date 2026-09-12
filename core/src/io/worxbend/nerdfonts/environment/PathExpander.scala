@@ -7,6 +7,9 @@ import java.nio.file.Path
 
 import scala.util.Try
 
+import zio.IO
+import zio.ZIO
+
 /**
  * Turns the configured destination into an absolute path with exactly the Go `expandPath` rules.
  *
@@ -18,14 +21,18 @@ import scala.util.Try
 object PathExpander:
   private val tildePrefix = "~/"
 
-  def expand(path: DestinationPath, env: Environment): Either[PathError, os.Path] =
+  def expand(path: DestinationPath, env: Environment): IO[PathError, os.Path] =
     val raw = path.value
     if raw == "~" then home(env)
-    else if raw.startsWith(tildePrefix) then home(env).flatMap(joined(_, raw.drop(tildePrefix.length), raw))
-    else if raw.startsWith("/") then absolute(raw)
-    else env.workingDirectory.left.map(PathError.NoWorkingDirectory(_)).flatMap(resolved(raw, _))
+    else if raw.startsWith(tildePrefix) then
+      home(env).flatMap(h => ZIO.fromEither(joined(h, raw.drop(tildePrefix.length), raw)))
+    else if raw.startsWith("/") then ZIO.fromEither(absolute(raw))
+    else
+      env.workingDirectory
+        .mapError(PathError.NoWorkingDirectory(_))
+        .flatMap(cwd => ZIO.fromEither(resolved(raw, cwd)))
 
-  private def home(env: Environment): Either[PathError, os.Path] = env.homeDirectory.toRight(PathError.NoHome)
+  private def home(env: Environment): IO[PathError, os.Path] = env.homeDirectory.someOrFail(PathError.NoHome)
 
   // `Path.of(home, rest)` joins and normalises like Go's `filepath.Join`, including `..` segments and doubled
   // separators, so `~//x` and `~/a/../b` land where Go puts them.

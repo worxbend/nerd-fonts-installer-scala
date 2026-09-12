@@ -1,5 +1,9 @@
 package io.worxbend.nerdfonts.http
 
+import zio.Scope
+import zio.ZIO
+import zio.stream.ZStream
+
 import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.io.InputStream
@@ -8,32 +12,40 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
-import ox.discard
-
 /**
  * An `HttpClient` serving canned responses by URL, for tests in every module.
  *
- * Bodies go through [[ResponseDelivery]] and therefore through the real [[BoundedInputStream]], so a test
- * that asserts on the byte caps exercises the production logic rather than a re-implementation. Every
- * request is recorded so tests can assert on headers, order and count. A URL with no route is a transport
- * failure, which is what a test that must not touch the network should see.
+ * Bodies go through [[ResponseDelivery]], so a test that asserts on the byte caps exercises the production
+ * cap logic rather than a re-implementation. Every request is recorded so tests can assert on headers,
+ * order and count. A URL with no route is a transport failure, which is what a test that must not touch
+ * the network should see.
+ *
+ * Requests are recorded on a plain `AtomicReference`, not a `Ref`, so a test can read `requests` outside
+ * any `ZIO` effect the same way it reads any other in-memory test double.
  */
 final class InMemoryHttpClient(routes: Map[Url, InMemoryHttpClient.Response]) extends HttpClient:
   private val recorded = AtomicReference(Vector.empty[HttpRequest])
 
-  /** Every request seen so far, in call order (safe to read while other threads are still calling). */
+  /** Every request seen so far, in call order (safe to read while other fibers are still calling). */
   def requests: Vector[HttpRequest] = recorded.get()
 
-  def get[A](request: HttpRequest, limit: ByteLimit, overflow: Overflow = Overflow.Reject)(
-      consume: InputStream => A,
-  ): Either[HttpError, A] =
-    recorded.updateAndGet(_ :+ request).discard
-    routes.get(request.url) match
-      case None                                                            => Left(HttpError.Transport(s"no route for ${request.url.value}"))
-      case Some(InMemoryHttpClient.Response.Failed(cause))                 => Left(HttpError.Transport(cause))
-      case Some(InMemoryHttpClient.Response.Served(status, headers, body)) =>
-        val raw = RawResponse(status, InMemoryHttpClient.contentLength(headers), body.open())
-        ResponseDelivery.deliver(raw, limit, overflow)(consume)
+  def get(
+      request: HttpRequest,
+      limit: ByteLimit,
+      overflow: Overflow = Overflow.Reject,
+  ): ZIO[Scope, HttpError, HttpResponse] =
+    ZIO.succeed(recorded.updateAndGet(_ :+ request)) *> (routes.get(request.url) match
+      case None                                                            => ZIO.fail(HttpError.Transport(s"no route for ${request.url.value}"))
+      case Some(InMemoryHttpClient.Response.Failed(cause))                 => ZIO.fail(HttpError.Transport(cause))
+      case Some(InMemoryHttpClient.Response.Served(status, headers, body)) => ResponseDelivery.deliver(
+          status,
+          InMemoryHttpClient.contentLength(headers),
+          limit,
+          overflow,
+          // Closed on exhaustion, failure or interruption, exactly like the production adapter's connection,
+          // so a test asserting on that guarantee exercises the same lifecycle as the real client.
+          ZStream.fromInputStreamZIO(ZIO.attempt(body.open()).refineToOrDie[IOException]),
+        ))
 
 object InMemoryHttpClient:
   /** The body a route serves; `Streamed` opens a fresh stream per request, e.g. one that blocks until interrupted. */

@@ -3,27 +3,28 @@ package io.worxbend.nerdfonts.releases
 import io.worxbend.nerdfonts.fonts.ReleaseTag
 import io.worxbend.nerdfonts.http.ByteLimit
 import io.worxbend.nerdfonts.http.HttpClient
+import io.worxbend.nerdfonts.http.HttpClient.getString
 import io.worxbend.nerdfonts.http.HttpError
 import io.worxbend.nerdfonts.http.HttpRequest
 import io.worxbend.nerdfonts.http.Url
 
-import scala.annotation.tailrec
 import scala.concurrent.duration.DurationInt
 import scala.concurrent.duration.FiniteDuration
 
-import ox.either
-import ox.either.catching
-import ox.either.ok
-import ox.timeoutEither
+import zio.Duration
+import zio.IO
+import zio.ZIO
+import zio.json.*
+import zio.json.ast.Json
 
 /**
  * The GitHub releases API as a [[ReleaseCatalogue]], paginated exactly like the Go client.
  *
  * Pagination stops when a raw page is empty, not when filtering emptied it: a page of only drafts or
  * asset-less releases must not hide usable releases further on. Each page has one overall deadline
- * covering connect, headers, body and decode, which is Go's `http.Client{Timeout: 30s}`; the JDK client
- * itself only has a connect timeout. The page body is capped so a hostile or broken API cannot make the
- * process buffer without bound.
+ * covering connect, headers, body and decode, which is Go's `http.Client{Timeout: 30s}`; the port itself
+ * only bounds connect and read separately. The page body is capped so a hostile or broken API cannot make
+ * the process buffer without bound.
  */
 final class GitHubReleaseCatalogue(
     http: HttpClient,
@@ -33,24 +34,24 @@ final class GitHubReleaseCatalogue(
     pageTimeout: FiniteDuration = GitHubReleaseCatalogue.defaultPageTimeout,
 ) extends ReleaseCatalogue:
 
-  def releases(): Either[ReleaseError, Vector[Release]] = collect(1, Vector.empty).flatMap: all =>
-    if all.isEmpty then Left(ReleaseError.NoReleases) else Right(all)
+  def releases(): IO[ReleaseError, Vector[Release]] = collect(1, Vector.empty).flatMap: all =>
+    if all.isEmpty then ZIO.fail(ReleaseError.NoReleases) else ZIO.succeed(all)
 
-  @tailrec
-  private def collect(page: Int, collected: Vector[Release]): Either[ReleaseError, Vector[Release]] =
-    if page > maxPages then Right(collected)
+  private def collect(page: Int, collected: Vector[Release]): IO[ReleaseError, Vector[Release]] =
+    if page > maxPages then ZIO.succeed(collected)
     else
-      fetchPage(page) match
-        case Left(error)                             => Left(error)
-        case Right(fetched) if fetched.rawCount == 0 => Right(collected ++ fetched.releases)
-        case Right(fetched)                          => collect(page + 1, collected ++ fetched.releases)
+      fetchPage(page).flatMap: fetched =>
+        if fetched.rawCount == 0 then ZIO.succeed(collected ++ fetched.releases)
+        else collect(page + 1, collected ++ fetched.releases)
 
-  private def fetchPage(page: Int): Either[ReleaseError, ReleasePage] =
-    timeoutEither(pageTimeout, timedOut)(fetchPageNow(page))
+  private def fetchPage(page: Int): IO[ReleaseError, ReleasePage] =
+    fetchPageNow(page).timeoutFail(timedOut)(Duration.fromScala(pageTimeout))
 
-  private def fetchPageNow(page: Int): Either[ReleaseError, ReleasePage] = either:
-    val body = http.getString(request(page), pageLimit).left.map(ReleaseError.Http(_)).ok()
-    ReleasePageDecoder.decode(body).ok()
+  private def fetchPageNow(page: Int): IO[ReleaseError, ReleasePage] =
+    for
+      body    <- http.getString(request(page), pageLimit).mapError(ReleaseError.Http(_))
+      decoded <- ZIO.fromEither(ReleasePageDecoder.decode(body))
+    yield decoded
 
   private def request(page: Int): HttpRequest = HttpRequest(
     GitHubReleaseCatalogue.pageUrl(baseUrl, page),
@@ -83,12 +84,13 @@ final private[releases] case class ReleasePage(rawCount: Int, releases: Vector[R
 private[releases] object ReleasePageDecoder:
   private val zipSuffix = ".zip"
 
-  def decode(body: String): Either[ReleaseError, ReleasePage] = either:
-    val json   = parse(body).ok()
-    val items  = json.arrOpt.map(_.toVector).toRight(malformed("expected a JSON array of releases")).ok()
-    val usable = items.foldLeft[Either[ReleaseError, Vector[Release]]](Right(Vector.empty)): (acc, item) =>
-      acc.flatMap(releases => decodeRelease(item).map(releases ++ _))
-    ReleasePage(items.size, usable.ok())
+  def decode(body: String): Either[ReleaseError, ReleasePage] =
+    for
+      json   <- parse(body)
+      items  <- json.asArray.map(_.toVector).toRight(malformed("expected a JSON array of releases"))
+      usable <- items.foldLeft[Either[ReleaseError, Vector[Release]]](Right(Vector.empty)): (acc, item) =>
+                  acc.flatMap(releases => decodeRelease(item).map(releases ++ _))
+    yield ReleasePage(items.size, usable)
 
   private[releases] def familiesFromAssets(assets: Vector[String]): Vector[String] = assets
     .filter(_.toLowerCase.endsWith(zipSuffix))
@@ -97,20 +99,19 @@ private[releases] object ReleasePageDecoder:
     .distinct
     .sorted
 
-  // `trace = false`: the traced variant wraps failures in a `TraceException`, hiding the parse error type.
-  private def parse(body: String): Either[ReleaseError, ujson.Value] = ujson
-    .read(ujson.Readable.fromString(body), trace = false)
-    .catching[ujson.ParsingFailedException]
+  private def parse(body: String): Either[ReleaseError, Json] = body
+    .fromJson[Json]
     .left
-    .map(error => malformed(Option(error.getMessage).getOrElse("invalid JSON")))
+    .map(message => malformed(Option(message).filter(_.nonEmpty).getOrElse("invalid JSON")))
 
-  private def decodeRelease(item: ujson.Value): Either[ReleaseError, Option[Release]] = either:
-    val fields = item.objOpt.toRight(malformed("release entry is not an object")).ok()
-    val draft  = optionalBool(fields, "draft").ok()
-    val tag    = optionalString(fields, "tag_name").ok()
-    val name   = optionalString(fields, "name").ok()
-    val assets = assetNames(fields).ok()
-    if draft then None else ReleaseTag.parse(tag).flatMap(usableRelease(_, name, assets))
+  private def decodeRelease(item: Json): Either[ReleaseError, Option[Release]] =
+    for
+      fields <- item.asObject.toRight(malformed("release entry is not an object"))
+      draft  <- optionalBool(fields, "draft")
+      tag    <- optionalString(fields, "tag_name")
+      name   <- optionalString(fields, "name")
+      assets <- assetNames(fields)
+    yield if draft then None else ReleaseTag.parse(tag).flatMap(usableRelease(_, name, assets))
 
   private def usableRelease(tag: ReleaseTag, name: String, assets: Vector[String]): Option[Release] =
     Option(familiesFromAssets(assets))
@@ -118,26 +119,26 @@ private[releases] object ReleasePageDecoder:
       .map: families =>
         Release(Option(name.trim).filter(_.nonEmpty).getOrElse(tag.value), tag, families)
 
-  private def assetNames(fields: ujson.Obj): Either[ReleaseError, Vector[String]] =
-    fields.value.get("assets").filterNot(_.isNull) match
+  private def assetNames(fields: Json.Obj): Either[ReleaseError, Vector[String]] =
+    fields.get("assets").filterNot(_ == Json.Null) match
       case None         => Right(Vector.empty)
-      case Some(assets) => assets.arrOpt
+      case Some(assets) => assets.asArray
           .toRight(malformed("field assets: expected an array"))
           .flatMap: entries =>
-            entries.toVector.foldLeft[Either[ReleaseError, Vector[String]]](Right(Vector.empty)):
-              (acc, asset) => acc.flatMap(names => assetName(asset).map(names :+ _))
+            entries.foldLeft[Either[ReleaseError, Vector[String]]](Right(Vector.empty)): (acc, asset) =>
+              acc.flatMap(names => assetName(asset).map(names :+ _))
 
-  private def assetName(asset: ujson.Value): Either[ReleaseError, String] =
-    asset.objOpt.toRight(malformed("asset entry is not an object")).flatMap(optionalString(_, "name"))
+  private def assetName(asset: Json): Either[ReleaseError, String] =
+    asset.asObject.toRight(malformed("asset entry is not an object")).flatMap(optionalString(_, "name"))
 
-  private def optionalString(fields: ujson.Obj, key: String): Either[ReleaseError, String] =
-    fields.value.get(key).filterNot(_.isNull) match
+  private def optionalString(fields: Json.Obj, key: String): Either[ReleaseError, String] =
+    fields.get(key).filterNot(_ == Json.Null) match
       case None        => Right("")
-      case Some(value) => value.strOpt.toRight(malformed(s"field $key: expected a string"))
+      case Some(value) => value.asString.toRight(malformed(s"field $key: expected a string"))
 
-  private def optionalBool(fields: ujson.Obj, key: String): Either[ReleaseError, Boolean] =
-    fields.value.get(key).filterNot(_.isNull) match
+  private def optionalBool(fields: Json.Obj, key: String): Either[ReleaseError, Boolean] =
+    fields.get(key).filterNot(_ == Json.Null) match
       case None        => Right(false)
-      case Some(value) => value.boolOpt.toRight(malformed(s"field $key: expected a boolean"))
+      case Some(value) => value.asBoolean.toRight(malformed(s"field $key: expected a boolean"))
 
   private def malformed(message: String): ReleaseError = ReleaseError.Decode(message)
