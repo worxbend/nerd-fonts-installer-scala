@@ -5,7 +5,11 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The version is `Versions.project` in
 `build.mill`; releases are Git tags `vX.Y.Z` built by `.github/workflows/release.yml`.
 
-## [Unreleased]
+## [1.0.0] - 2026-09-12
+
+First stable release. The tool no longer describes itself as a reimplementation of anything: the CLI
+surface, the config contract and the exit codes documented in `docs/SPEC.md` are now the versioned
+contract, and the breaking changes listed below are absorbed at this 1.0 boundary rather than deferred.
 
 ### Added
 
@@ -48,6 +52,9 @@ All notable changes to this project are documented here. The format follows
 
 ## [0.1.0] - 2026-09-11
 
+Initial development version. It was never tagged as a release; its binaries were distributed only through
+the rolling `latest` pre-release, so there is no `v0.1.0` tag to compare against.
+
 Initial release: a Scala 3 CLI that installs Nerd Fonts from a declarative config, shipped as GraalVM
 native binaries that need no JVM.
 
@@ -84,5 +91,5 @@ native binaries that need no JVM.
 
 - `--help` prints usage to stdout and exits 0. This is recorded in `docs/SPEC.md`.
 
-[Unreleased]: https://github.com/worxbend/nerd-fonts-installer-scala/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/worxbend/nerd-fonts-installer-scala/releases/tag/v0.1.0
+[Unreleased]: https://github.com/worxbend/nerd-fonts-installer-scala/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/worxbend/nerd-fonts-installer-scala/releases/tag/v1.0.0

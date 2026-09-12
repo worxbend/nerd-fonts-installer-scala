@@ -74,7 +74,7 @@ curl --proto '=https' --tlsv1.2 -sSfL \
 
 `scripts/install.sh` detects `{linux,macos}-{amd64,arm64}`, downloads the matching tarball and
 `checksums.txt` from the same GitHub release, verifies the SHA-256, and installs into `~/.local/bin` — no
-root, no package manager. Set `NERD_FONTS_INSTALLER_VERSION=v0.1.0` before the pipe to pin an exact tag, or
+root, no package manager. Set `NERD_FONTS_INSTALLER_VERSION=v1.0.0` before the pipe to pin an exact tag, or
 `NERD_FONTS_INSTALLER_INSTALL_DIR` to change where the binary lands.
 
 <details>
@@ -242,7 +242,7 @@ still exits `0`.) The short `-h` alias for `--help` is kept.
 
 ```bash
 $ nerd-fonts-installer --version
-nerd-fonts-installer 0.1.0 (64af793607b8, unknown)
+nerd-fonts-installer 1.0.0 (64af793607b8, unknown)
 
 $ nerd-fonts-installer --font-names
 # v3.4.0

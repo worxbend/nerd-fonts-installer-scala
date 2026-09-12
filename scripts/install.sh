@@ -6,9 +6,9 @@
 #     https://github.com/worxbend/nerd-fonts-installer-scala/releases/download/latest/install.sh | sh
 #
 # Environment variables:
-#   NERD_FONTS_INSTALLER_VERSION      Release tag to install, e.g. v0.1.0 (default: latest, the moving
+#   NERD_FONTS_INSTALLER_VERSION      Release tag to install, e.g. v1.0.0 (default: latest, the moving
 #                                      pre-release CI refreshes on every push; stable asset names, never a
-#                                      redirect). Pin a real tag (e.g. v0.1.0) for reproducible installs.
+#                                      redirect). Pin a real tag (e.g. v1.0.0) for reproducible installs.
 #   NERD_FONTS_INSTALLER_INSTALL_DIR  Directory to install the binary into (default: $HOME/.local/bin)
 
 set -eu

@@ -20,7 +20,7 @@ body:
     id: version
     attributes:
       label: Output of `nerd-fonts-installer --version`
-      placeholder: nerd-fonts-installer 0.1.0 (2e93312925a0, 2026-09-11T12:00:00Z)
+      placeholder: nerd-fonts-installer 1.0.0 (2e93312925a0, 2026-09-11T12:00:00Z)
     validations:
       required: true
   - type: dropdown

@@ -11,7 +11,7 @@ import mill.scalalib.*
 import mill.scalalib.scalafmt.ScalafmtModule
 
 object Versions:
-  val project = "0.1.0"
+  val project = "1.0.0"
   val scala   = "3.9.0"
   // GraalVM Community for JDK 25 ships `native-image`, so one toolchain compiles, tests and links the
   // binary on every CI runner without a separate GraalVM setup step.
