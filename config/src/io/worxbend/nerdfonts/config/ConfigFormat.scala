@@ -1,18 +1,25 @@
 package io.worxbend.nerdfonts.config
 
+import java.util.Locale
+
 /**
- * Which decoder a file gets. Decided by the last extension alone, like Go's `filepath.Ext` compared
- * case-insensitively with `.json`: `x.JSON` is JSON, `x.json.bak`, `.conf`, `.yml` and an extension-less file
- * are YAML. YAML is the fallback rather than an error so `.conf` keeps working as the Go tool documents.
+ * Which reader a file gets, decided by its last extension alone (Go's `filepath.Ext`, compared
+ * case-insensitively): `.json` -> JSON, `.yaml`/`.yml` -> YAML, `.conf`/`.hocon` -> HOCON. Any other
+ * extension — or none — is a hard [[ConfigError.UnsupportedFormat]] rather than a silent guess (§4).
+ *
+ * JSON is read leniently through Typesafe Config (HOCON is a superset of JSON), so [[Json]] and [[Hocon]]
+ * share a provider; they stay distinct here only so a `.json` file is named as JSON when it cannot be parsed.
  */
 private[config] enum ConfigFormat:
-  case Yaml, Json
+  case Yaml, Json, Hocon
 
 private[config] object ConfigFormat:
-  private val jsonExtension = ".json"
-
-  def of(path: os.Path): ConfigFormat =
-    if goExtension(path.last).equalsIgnoreCase(jsonExtension) then Json else Yaml
+  def of(path: os.Path): Either[ConfigError, ConfigFormat] =
+    goExtension(path.last).toLowerCase(Locale.ROOT) match
+      case ".json"            => Right(Json)
+      case ".yaml" | ".yml"   => Right(Yaml)
+      case ".conf" | ".hocon" => Right(Hocon)
+      case extension          => Left(ConfigError.UnsupportedFormat(path, extension))
 
   // `filepath.Ext` keeps the dot and treats a leading dot as an extension (`.json` is JSON), unlike `os.Path.ext`.
   private def goExtension(fileName: String): String = fileName.lastIndexOf('.') match
