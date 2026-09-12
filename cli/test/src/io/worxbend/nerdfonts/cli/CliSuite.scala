@@ -20,6 +20,8 @@ import io.worxbend.nerdfonts.releases.ReleaseUrls
 
 import java.util.concurrent.atomic.AtomicReference
 
+import zio.Cause
+import zio.FiberId
 import zio.ZIO
 import zio.test.Spec
 import zio.test.TestEnvironment
@@ -336,6 +338,32 @@ object CliSuite extends ZIOSpecDefault:
             result.code == 1,
             result.err == "install fonts: install Nerd Font family Inter: download https://github.com/ryanoasis/nerd-fonts/releases/latest/download/Inter.zip: 404 Not Found\n",
           ),
+      )
+    ,
+    test("a family that fails while a sibling is still running still reports the real error"):
+      // `ZIO.foreachPar` interrupts the surviving siblings the moment one family fails, so the cause is
+      // `Both(Fail(real), Interrupt(sibling))`. `Cause#isInterrupted` is true for that shape, so checking it
+      // before the typed failure reported every multi-family failure as "install fonts: interrupted" and
+      // destroyed the only diagnostic the user gets. A single-family install was unaffected, because
+      // `foreachPar` runs one element inline without forking -- which is why the test above passed.
+      val inter         = family("Inter")
+      val failure       = InstallError.Family(
+        inter,
+        FamilyInstallError.Download(
+          ReleaseUrls.github.download(ReleaseSelector.Latest, inter),
+          HttpError.Status(404),
+        ),
+      )
+      val parallelCause = Cause.Both(Cause.fail(failure), Cause.interrupt(FiberId.None))
+      runCli(
+        withConfig().copy(installFonts = (_, _) => ZIO.failCause(parallelCause)),
+        "--config",
+        "fonts.yaml",
+      ).map(result =>
+        assertTrue(
+          result.code == 1,
+          result.err == "install fonts: install Nerd Font family Inter: download https://github.com/ryanoasis/nerd-fonts/releases/latest/download/Inter.zip: 404 Not Found\n",
+        ),
       )
     ,
     test("a destination that cannot be expanded exits 1"):

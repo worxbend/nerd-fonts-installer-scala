@@ -65,11 +65,18 @@ object Application:
     .flatMap: phase =>
       restore(program(options, deps, out, err, phase)).foldCauseZIO(
         cause =>
-          if cause.isInterrupted then phase.get.map(p => Left(AppFailure.Interrupted(p)))
-          else
-            cause.failureOrCause match
-              case Left(failure) => ZIO.succeed(Left(failure))
-              case Right(defect) => ZIO.failCause(defect)
+          // A typed failure is preferred over the interrupt, and the order matters. `Cause#isInterrupted`
+          // is true if *any* node in the tree is an interrupt, and `ZIO.foreachPar` interrupts the
+          // surviving siblings as soon as one family fails, producing `Both(Fail(real), Interrupt(...))`.
+          // Checking the interrupt first therefore replaced the real diagnostic with "interrupted" for
+          // every multi-family install -- while a single-family install, which `foreachPar` runs inline
+          // without forking, reported correctly. `failureOrCause` reads the typed failure if there is one
+          // and only yields the raw cause when there is not, so a genuine interrupt still lands below.
+          cause.failureOrCause match
+            case Left(failure) => ZIO.succeed(Left(failure))
+            case Right(rest)   =>
+              if rest.isInterrupted then phase.get.map(p => Left(AppFailure.Interrupted(p)))
+              else ZIO.failCause(rest)
         ,
         outcome => ZIO.succeed(Right(outcome)),
       )
