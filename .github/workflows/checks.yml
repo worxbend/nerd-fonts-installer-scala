@@ -93,11 +93,14 @@ jobs:
           BIN: ${{ steps.native.outputs.path }}
         run: |
           set -euo pipefail
-          "${BIN}" --version
-          "${BIN}" --help > help.txt
+          # Every invocation is wrapped in `timeout`. A misconfigured native image does not necessarily
+          # crash: Netty's allocator hangs the process forever when `-H:+SharedArenaSupport` is missing,
+          # so an unbounded command would burn the whole job timeout and report a confusing failure.
+          timeout 60 "${BIN}" --version
+          timeout 60 "${BIN}" --help > help.txt
           grep -q -- '--dry-run' help.txt
-          "${BIN}" --config config.example.yaml --dry-run
-          if "${BIN}" --icons bogus; then echo "expected exit 2"; exit 1; fi
+          timeout 120 "${BIN}" --config config.example.yaml --dry-run
+          if timeout 60 "${BIN}" --bogus-flag; then echo "expected exit 2 for an unknown flag"; exit 1; fi
           scripts/ci/interrupt-smoke.sh "${BIN}"
 
   actionlint:

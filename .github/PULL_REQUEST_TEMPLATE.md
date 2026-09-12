@@ -20,7 +20,7 @@ The gate (`AGENTS.md`), run locally with `./mill --no-daemon`:
 
 Boundaries and invariants:
 
-- [ ] Module edges still hold (`app -> cli -> {core, config, picker}`, `config -> core`, `picker -> core`; `core` imports no picocli, fansi or terminal code)
+- [ ] Module edges still hold (`app -> cli -> {core, config}`, `config -> core`; `core` imports no fansi or terminal code)
 - [ ] No new class-level `var`, `null`, `return` or `while`; no `sys.env`/`sys.props` below the composition root
 - [ ] The security invariants are untouched or this PR says how they are strengthened: `FamilyName.parse` before any path or URL, byte caps on downloads and extraction, checksum mismatch fatal, staged-then-renamed installs (`docs/SECURITY.md`)
 - [ ] New ports come with a fake next to their tests; no test touches the network

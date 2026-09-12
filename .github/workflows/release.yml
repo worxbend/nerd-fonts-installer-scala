@@ -50,7 +50,7 @@ jobs:
             exit 0
           fi
           if git diff --name-only "${before}" "${GITHUB_SHA}" \
-               | grep -qE '^(app|cli|core|config|picker)/|(^|/)build\.mill$|^mill$|^\.mill-version$|^\.github/workflows/release\.yml$'
+               | grep -qE '^(app|cli|core|config)/|(^|/)build\.mill$|^mill$|^\.mill-version$|^\.github/workflows/release\.yml$'
           then
             echo "relevant=true" >> "${GITHUB_OUTPUT}"
           else
