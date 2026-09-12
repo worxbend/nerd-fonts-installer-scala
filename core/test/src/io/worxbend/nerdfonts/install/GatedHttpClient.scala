@@ -8,10 +8,10 @@ import io.worxbend.nerdfonts.http.HttpResponse
 import io.worxbend.nerdfonts.http.Overflow
 import io.worxbend.nerdfonts.http.Url
 
+import java.util.concurrent.CountDownLatch
+
 import zio.Scope
 import zio.ZIO
-
-import java.util.concurrent.CountDownLatch
 
 /**
  * Wraps a delegate `HttpClient`, holding any request whose URL has a gate until that gate's latch counts

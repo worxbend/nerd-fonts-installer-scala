@@ -1,14 +1,14 @@
 package io.worxbend.nerdfonts
 
-import zio.test.ZIOSpecDefault
-import zio.test.assertTrue
-
 import java.io.IOException
 import java.nio.file.AccessDeniedException
 import java.nio.file.DirectoryNotEmptyException
 import java.nio.file.FileAlreadyExistsException
 import java.nio.file.NoSuchFileException
 import java.nio.file.NotDirectoryException
+
+import zio.test.ZIOSpecDefault
+import zio.test.assertTrue
 
 /**
  * The JDK's Unix `FileSystemException`s carry no reason (`getMessage` is just the path), unlike Go's wrapped

@@ -8,10 +8,11 @@ import io.worxbend.nerdfonts.process.ExitStatus
 import io.worxbend.nerdfonts.process.ProcessError
 import io.worxbend.nerdfonts.releases.ReleaseUrls
 import io.worxbend.nerdfonts.releases.Sha256Digest
-import zio.test.ZIOSpecDefault
-import zio.test.assertTrue
 
 import scala.concurrent.duration.DurationInt
+
+import zio.test.ZIOSpecDefault
+import zio.test.assertTrue
 
 /** The message table of SPEC §6.3, one row per test. */
 object InstallErrorSuite extends ZIOSpecDefault:

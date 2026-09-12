@@ -9,6 +9,8 @@ import io.worxbend.nerdfonts.http.InMemoryHttpClient.Body
 import io.worxbend.nerdfonts.http.InMemoryHttpClient.Response
 import io.worxbend.nerdfonts.http.Url
 
+import scala.concurrent.duration.DurationInt
+
 import zio.Chunk
 import zio.json.*
 import zio.json.ast.Json
@@ -17,8 +19,6 @@ import zio.test.TestAspect
 import zio.test.TestEnvironment
 import zio.test.ZIOSpecDefault
 import zio.test.assertTrue
-
-import scala.concurrent.duration.DurationInt
 
 /** Every scenario of the Go `releases_test.go`, plus the deadline and page cap the Scala port adds. */
 object GitHubReleaseCatalogueSuite extends ZIOSpecDefault:

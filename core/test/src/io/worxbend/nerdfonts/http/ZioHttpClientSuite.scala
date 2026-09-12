@@ -2,13 +2,6 @@ package io.worxbend.nerdfonts.http
 
 import io.worxbend.nerdfonts.http.HttpClient.getString
 
-import zio.IO
-import zio.ZIO
-import zio.test.Spec
-import zio.test.TestEnvironment
-import zio.test.ZIOSpecDefault
-import zio.test.assertTrue
-
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.util.concurrent.atomic.AtomicReference
@@ -17,6 +10,12 @@ import scala.util.Using
 
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
+import zio.IO
+import zio.ZIO
+import zio.test.Spec
+import zio.test.TestEnvironment
+import zio.test.ZIOSpecDefault
+import zio.test.assertTrue
 
 /**
  * `ZioHttpClient` against a loopback `HttpServer`: no network leaves the machine, but the real zio-http /

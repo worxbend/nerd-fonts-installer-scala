@@ -1,10 +1,11 @@
 package io.worxbend.nerdfonts.releases
 
 import io.worxbend.nerdfonts.fonts.FamilyName
-import zio.test.ZIOSpecDefault
-import zio.test.assertTrue
 
 import java.security.MessageDigest
+
+import zio.test.ZIOSpecDefault
+import zio.test.assertTrue
 
 object ChecksumManifestSuite extends ZIOSpecDefault:
   private val hackDigest      = "a" * 64

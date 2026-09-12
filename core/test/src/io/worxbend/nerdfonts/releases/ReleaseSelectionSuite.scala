@@ -3,6 +3,7 @@ package io.worxbend.nerdfonts.releases
 import io.worxbend.nerdfonts.fonts.ReleaseSelector
 import io.worxbend.nerdfonts.fonts.ReleaseTag
 import io.worxbend.nerdfonts.http.HttpError
+
 import zio.test.ZIOSpecDefault
 import zio.test.assertTrue
 

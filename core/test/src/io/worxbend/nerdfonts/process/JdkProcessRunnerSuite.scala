@@ -2,17 +2,17 @@ package io.worxbend.nerdfonts.process
 
 import io.worxbend.nerdfonts.environment.Environment
 
-import zio.UIO
-import zio.ZIO
-import zio.test.TestResult
-import zio.test.ZIOSpecDefault
-import zio.test.assertTrue
-
 import java.nio.file.attribute.PosixFilePermission
 
 import scala.annotation.tailrec
 import scala.jdk.CollectionConverters.*
 import scala.jdk.OptionConverters.*
+
+import zio.UIO
+import zio.ZIO
+import zio.test.TestResult
+import zio.test.ZIOSpecDefault
+import zio.test.assertTrue
 
 /** Real subprocesses, but only POSIX-standard ones (`echo`, `cat`, `false`, `ls`) and never through a shell. */
 object JdkProcessRunnerSuite extends ZIOSpecDefault:

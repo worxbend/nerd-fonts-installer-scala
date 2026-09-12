@@ -7,6 +7,7 @@ import io.worxbend.nerdfonts.fonts.ReleaseSelector
 import io.worxbend.nerdfonts.fonts.ReleaseTag
 import io.worxbend.nerdfonts.http.Url
 import io.worxbend.nerdfonts.releases.ReleaseUrls
+
 import zio.test.ZIOSpecDefault
 import zio.test.assertTrue
 

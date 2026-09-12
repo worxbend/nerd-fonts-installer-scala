@@ -1,10 +1,10 @@
 package io.worxbend.nerdfonts.http
 
-import zio.test.ZIOSpecDefault
-import zio.test.assertTrue
-
 import java.io.ByteArrayInputStream
 import java.util.concurrent.atomic.AtomicBoolean
+
+import zio.test.ZIOSpecDefault
+import zio.test.assertTrue
 
 object BoundedInputStreamSuite extends ZIOSpecDefault:
   private val limit = ByteLimit.bytes(4)

@@ -20,6 +20,15 @@ import io.worxbend.nerdfonts.process.FakeProcessRunner.Script
 import io.worxbend.nerdfonts.process.ProcessSpec
 import io.worxbend.nerdfonts.releases.ReleaseUrls
 
+import java.io.IOException
+import java.io.InputStream
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicInteger
+
+import scala.annotation.tailrec
+import scala.concurrent.duration.DurationInt
+import scala.concurrent.duration.FiniteDuration
+
 import zio.Scope
 import zio.Task
 import zio.UIO
@@ -29,15 +38,6 @@ import zio.test.TestAspect
 import zio.test.TestEnvironment
 import zio.test.ZIOSpecDefault
 import zio.test.assertTrue
-
-import java.io.IOException
-import java.io.InputStream
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.atomic.AtomicInteger
-
-import scala.annotation.tailrec
-import scala.concurrent.duration.DurationInt
-import scala.concurrent.duration.FiniteDuration
 
 /** Every `core/install` scenario of SPEC §6, through the real engine with in-memory ports. */
 object FontInstallerSuite extends ZIOSpecDefault:

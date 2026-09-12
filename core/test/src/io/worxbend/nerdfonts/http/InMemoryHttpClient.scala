@@ -1,9 +1,5 @@
 package io.worxbend.nerdfonts.http
 
-import zio.Scope
-import zio.ZIO
-import zio.stream.ZStream
-
 import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.io.InputStream
@@ -11,6 +7,10 @@ import java.nio.charset.StandardCharsets
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
+
+import zio.Scope
+import zio.ZIO
+import zio.stream.ZStream
 
 /**
  * An `HttpClient` serving canned responses by URL, for tests in every module.

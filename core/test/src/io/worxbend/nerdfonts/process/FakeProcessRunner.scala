@@ -2,11 +2,11 @@ package io.worxbend.nerdfonts.process
 
 import io.worxbend.nerdfonts.discard
 
+import java.util.concurrent.atomic.AtomicReference
+
 import zio.IO
 import zio.UIO
 import zio.ZIO
-
-import java.util.concurrent.atomic.AtomicReference
 
 /**
  * A scripted `ProcessRunner` for tests in every module: the first script whose `prefix` matches the start

@@ -4,13 +4,13 @@ import io.worxbend.nerdfonts.http.HttpClient.getBytes
 import io.worxbend.nerdfonts.http.InMemoryHttpClient.Body
 import io.worxbend.nerdfonts.http.InMemoryHttpClient.Response
 
+import java.io.ByteArrayInputStream
+import java.util.concurrent.atomic.AtomicInteger
+
 import zio.test.Spec
 import zio.test.TestEnvironment
 import zio.test.ZIOSpecDefault
 import zio.test.assertTrue
-
-import java.io.ByteArrayInputStream
-import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Behaviour that belongs to the fake itself, not to the `HttpClient` contract every adapter shares: how an

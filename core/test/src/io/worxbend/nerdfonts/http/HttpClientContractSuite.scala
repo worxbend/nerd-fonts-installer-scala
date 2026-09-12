@@ -4,15 +4,15 @@ import io.worxbend.nerdfonts.http.HttpClient.getBytes
 import io.worxbend.nerdfonts.http.HttpClient.getString
 import io.worxbend.nerdfonts.http.InMemoryHttpClient.Response
 
+import java.io.ByteArrayInputStream
+import java.util.concurrent.atomic.AtomicBoolean
+
 import zio.IO
 import zio.ZIO
 import zio.test.Spec
 import zio.test.TestEnvironment
 import zio.test.ZIOSpecDefault
 import zio.test.assertTrue
-
-import java.io.ByteArrayInputStream
-import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * The `HttpClient` contract, exercised through the in-memory fake. The fake delegates to the same
