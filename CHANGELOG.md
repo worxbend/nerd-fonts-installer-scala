@@ -5,6 +5,17 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The version is `Versions.project` in
 `build.mill`; releases are Git tags `vX.Y.Z` built by `.github/workflows/release.yml`.
 
+## [Unreleased]
+
+## [1.0.1] - 2026-10-13
+
+### Changed
+
+- Updated Scala to 3.10.0, Mill to 1.3.0, GraalVM Community to 25 Innovation 4
+  (Graal 25.4.4.1.1 / JDK 25.0.4.1.1), zio-http to 3.11.6 and Scalafix to 0.14.9.
+- Refreshed the Mill launcher's pinned SHA-256 digests and GitHub Actions patch versions.
+- Documented the dependency audit and upstream releases whose Maven artifacts are not yet published.
+
 ## [1.0.0] - 2026-09-12
 
 First stable release. The tool no longer describes itself as a reimplementation of anything: the CLI
@@ -95,5 +106,6 @@ native binaries that need no JVM.
 
 - `--help` prints usage to stdout and exits 0. This is recorded in `docs/SPEC.md`.
 
-[Unreleased]: https://github.com/worxbend/nerd-fonts-installer-scala/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/worxbend/nerd-fonts-installer-scala/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/worxbend/nerd-fonts-installer-scala/releases/tag/v1.0.1
 [1.0.0]: https://github.com/worxbend/nerd-fonts-installer-scala/releases/tag/v1.0.0

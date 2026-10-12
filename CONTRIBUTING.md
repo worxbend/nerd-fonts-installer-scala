@@ -7,7 +7,7 @@ The tool is self-sufficient: `docs/SPEC.md` is the single source of truth for ho
 
 ## Prerequisites
 
-- `git` and the `./mill` wrapper in the repository. Nothing else: the wrapper downloads Mill 1.1.9
+- `git` and the `./mill` wrapper in the repository. Nothing else: the wrapper downloads Mill 1.3.0
   (`.mill-version`) and Mill fetches the toolchain, GraalVM Community for JDK 25 (`Versions.graalvm` in
   `build.mill`). No system JDK, no `GRAALVM_HOME`, no `JAVA_HOME`.
 - For the native binary only, `native-image` links with the platform toolchain: a C compiler, libc headers
@@ -32,7 +32,7 @@ same commands on `ubuntu-24.04`.
 | Smoke from source | `./mill --no-daemon app.run --config config.example.yaml --dry-run` |
 
 Pass the application's arguments directly after `app.run`. With this repository's `./mill` wrapper
-(Mill 1.1.9) everything after a `--` separator is dropped, so `app.run -- --help` runs the tool with no
+(Mill 1.3.0) everything after a `--` separator is dropped, so `app.run -- --help` runs the tool with no
 arguments, which discovers your config and installs fonts.
 
 Definition of done, from `AGENTS.md`: compiles with `-Werror`, all tests pass, formatted, scalafix clean, and

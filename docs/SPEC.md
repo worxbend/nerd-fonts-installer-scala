@@ -36,14 +36,14 @@ Command surface and output contracts:
 
 | Concern | Choice |
 | --- | --- |
-| Language / build | Scala 3.9.0, Mill 1.1.9 (`./mill`). JVM toolchain `graalvm-community:25.0.2` fetched by Mill (`jvmVersion` on every module, so `app.nativeImage` finds `native-image` without `GRAALVM_HOME`). Bytecode/API target = the toolchain (25): nothing ships as a JVM jar, so JDK 22+ APIs such as `Console.isTerminal` are available |
+| Language / build | Scala 3.10.0, Mill 1.3.0 (`./mill`). JVM toolchain GraalVM Community 25 Innovation 4 (JDK 25.0.4.1.1) fetched by Mill (`jvmVersion` on every module, so `app.nativeImage` finds `native-image` without `GRAALVM_HOME`). Bytecode/API target = the toolchain (25): nothing ships as a JVM jar, so JDK 22+ APIs such as `Console.isTerminal` are available |
 | Effects / concurrency | ZIO 2.1.26 throughout — `ZIO`/`IO` effects, `Scope` for resource safety, `ZIO.foreachPar`/`.withParallelism` for the fan-out, `.timeoutFail` for deadlines, `.ensuring`/`ZIO.acquireRelease` for cleanup, `Semaphore` to serialise the event sink. No Ox, no Futures |
 | Entry point | `ZIOAppDefault` (`app.Main`); the whole program is one `ZIO` value the runtime executes |
 | CLI parsing | A hand-rolled parser (§7). **Not** picocli, **not** zio-cli — §7 records why zio-cli was rejected |
 | Config decoding | zio-config 4.1.0 (`zio-config-yaml`, `zio-config-typesafe`, `zio-config-magnolia`). YAML through the YAML provider; JSON and HOCON both through Typesafe Config (HOCON is a superset of JSON). Formats: JSON, YAML, HOCON only (§4) |
 | Release/API JSON | `zio-json` (AST via `Json`), strict field typing |
 | Filesystem | `os-lib` for paths and IO; `java.util.zip.ZipInputStream` for archives |
-| HTTP | zio-http 3.11.5 client behind a streaming port (§3.1), configured with `ClientSSLConfig.FromJavaxNetSsl()` so TLS certificates are actually validated (a security invariant — §3.1) |
+| HTTP | zio-http 3.11.6 client behind a streaming port (§3.1), configured with `ClientSSLConfig.FromJavaxNetSsl()` so TLS certificates are actually validated (a security invariant — §3.1) |
 | Colour | `fansi` |
 | Tests | zio-test (`zio-test`, `zio-test-sbt`, `zio-test-magnolia`); ports are faked, tests never hit the network |
 | Lint | scalafmt, scalafix (OrganizeImports, DisableSyntax: no `var`, no `return`, no `null`, no `while`) |

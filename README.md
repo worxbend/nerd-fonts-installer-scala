@@ -454,9 +454,11 @@ same commands on `ubuntu-24.04`.
 | Smoke from source | `./mill --no-daemon app.run --config config.example.yaml --dry-run` |
 | Native binary | `./mill --no-daemon show app.nativeImage` |
 
-`./mill` is the checked-in wrapper (no local Mill install needed); it fetches Mill 1.1.9, which fetches
-`graalvm-community:25.0.2` for every module's `jvmVersion` — one toolchain compiles, tests, and links the
-native image, so there's no separate GraalVM setup step anywhere, including in CI.
+`./mill` is the checked-in wrapper (no local Mill install needed); it fetches Mill 1.3.0, which fetches
+GraalVM Community 25 Innovation 4 (JDK 25.0.4.1.1) through pinned release URLs for every module's
+`jvmVersion` — one toolchain compiles, tests, and links the native image, so there's no separate GraalVM
+setup step anywhere, including in CI. See [the dependency audit](docs/DEPENDENCIES.md) for versions and
+upstream publication exceptions.
 
 ### Tests, measured
 
@@ -501,11 +503,11 @@ these exact figures, on yours.
 
 | Concern | Choice | Why |
 | --- | --- | --- |
-| Language | Scala 3.9.0, direct-style (braceless syntax, explicit return types on public members) | `Either` + sealed error ADTs keep recoverable failures explicit and local; opaque types (`FamilyName`, `ReleaseTag`, `ByteLimit`, `Sha256Digest`, …) make an unvalidated `String` a compile error at every trust boundary |
+| Language | Scala 3.10.0, direct-style (braceless syntax, explicit return types on public members) | `Either` + sealed error ADTs keep recoverable failures explicit and local; opaque types (`FamilyName`, `ReleaseTag`, `ByteLimit`, `Sha256Digest`, …) make an unvalidated `String` a compile error at every trust boundary |
 | Effects & concurrency | [ZIO](https://zio.dev) 2.1.26 — `ZIO`/`IO` effects, `Scope` for resource safety, `ZIO.foreachPar`/`.withParallelism` for the four-way fan-out, `.timeoutFail` for deadlines | Structured concurrency and typed errors in one effect type: the fan-out cancels its in-flight siblings on the first failure, and `Scope`/`.ensuring` guarantee every temp file and staging dir is cleaned up, even on `Ctrl-C` |
-| HTTP | [zio-http](https://zio.dev/zio-http) 3.11.5 client behind a streaming port | TLS-validated (`ClientSSLConfig.FromJavaxNetSsl()`) and byte-capped by the port itself, so the in-memory test fake exercises the same cap logic as production; bodies are streamed, never materialised |
+| HTTP | [zio-http](https://zio.dev/zio-http) 3.11.6 client behind a streaming port | TLS-validated (`ClientSSLConfig.FromJavaxNetSsl()`) and byte-capped by the port itself, so the in-memory test fake exercises the same cap logic as production; bodies are streamed, never materialised |
 | CLI parsing | a hand-rolled, reflection-free parser on `ZIOAppDefault` | No Java reflection to configure for native-image, and it fails loudly on unknown or single-dash long flags (exit `2`). `zio-cli` was evaluated and rejected: it silently ignores unknown and single-dash flags and still exits `0`, so a mistyped `-dry-run` would perform a **real install** |
-| Build | [Mill](https://mill-build.org) 1.1.9 via the checked-in `./mill` wrapper | One `build.mill`, no plugins beyond scalafix; `jvmVersion` on every module points at `graalvm-community:25.0.2`, which Mill fetches itself — the same toolchain compiles, tests **and** links the native image |
+| Build | [Mill](https://mill-build.org) 1.3.0 via the checked-in `./mill` wrapper | One `build.mill`, no plugins beyond scalafix; `jvmVersion` on every module points at the pinned GraalVM Community 25 Innovation 4 release, which Mill fetches itself — the same toolchain compiles, tests **and** links the native image |
 | Native image | GraalVM Community for JDK 25, `--no-fallback -O2 -march=compatibility --initialize-at-run-time=io.netty -H:+SharedArenaSupport` | `-march=compatibility` keeps the binary runnable on pre-2013 CPUs and default-model VMs/containers; GraalVM 25's AMD64 default (`x86-64-v3`) would refuse to start on them. zio-http runs on Netty, so Netty is initialised at run time, and `-H:+SharedArenaSupport` is mandatory: without it the binary links, serves the request and prints the right answer, then **never exits**, because Netty's shutdown path hits a disabled `Arena.ofShared` |
 | Config decoding | [zio-config](https://zio.dev/zio-config) 4.1.0 (yaml, typesafe, magnolia) | One derived decoder for YAML, JSON and HOCON — JSON and HOCON are both parsed through Typesafe Config, HOCON being a superset of JSON. Decoding is lenient: unknown keys are ignored and a scalar coerces to a one-element list |
 | Tests | [zio-test](https://zio.dev/reference/test/) 2.1.26 (+ zio-test-magnolia) | One scenario per test, named as a sentence; a generator-based property suite for the one thing that must hold for *any* input (`FamilyName.parse`) |

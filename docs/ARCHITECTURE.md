@@ -242,6 +242,14 @@ one concern per function; scaladoc on public types explains why, not what.
 
 ## Decision log
 
+- **The 2026-10-13 toolchain update uses Scala 3.10.0, Mill 1.3.0 and GraalVM Community 25 Innovation 4
+  (Graal 25.4.4.1.1 / JDK 25.0.4.1.1).** Coursier's JVM index still ends at Community 25.0.2, so
+  `GraalvmWorker.jvmVersion` selects a pinned official release URL for the host OS/architecture; Coursier
+  still manages the download, extraction and cache. Every application module delegates to that task.
+  Native release targets remain Linux amd64/arm64; macOS arm64 and Windows amd64 can resolve the same
+  toolchain for source builds, while unsupported hosts fail explicitly. The Mill wrapper retains SHA-256
+  verification for all five launcher variants. The build header overrides the Scalafix plugin's older
+  interface dependency with 0.14.9. See [DEPENDENCIES.md](DEPENDENCIES.md) for the audit and publication holds.
 - **ZIO 2.1.26, not direct-style Ox.** The application is a ZIO program end to end: `Main` is a `ZIOAppDefault`,
   every port returns a `ZIO`/`ZStream`, cancellation is fiber interruption and cleanup is `.ensuring`/
   `acquireRelease`. This replaced the earlier direct-style stack (Ox structured concurrency, `either:`/`.ok()`
@@ -450,7 +458,7 @@ one concern per function; scaladoc on public types explains why, not what.
   pushes only.** A push to `main` that touches only `docs/**`, `*.md` or similar has nothing to ship, but the
   `latest` pre-release moves and force-pushes its tag on every push regardless; tag pushes and
   `workflow_dispatch` always report `relevant=true` so a real release is never skipped by the path check.
-- **`app.run` takes its arguments without a `--` separator.** With the checked-in wrapper (Mill 1.1.7)
+- **`app.run` takes its arguments without a `--` separator.** With the checked-in wrapper (Mill 1.3.0)
   `./mill --no-daemon app.run -- --help` reaches `Main` with an empty argument array (observed: the run
   discovered the developer's own config and installed from it), while `app.run --help` and
   `app.run --config config.example.yaml --dry-run` forward the arguments as typed. `AGENTS.md`,

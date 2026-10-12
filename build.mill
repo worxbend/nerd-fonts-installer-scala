@@ -1,27 +1,29 @@
-//| mill-version: 1.1.9
-//| mvnDeps: ["com.goyeau::mill-scalafix::0.6.2"]
+//| mill-version: 1.3.0
+//| mvnDeps: ["com.goyeau::mill-scalafix::0.6.2", "ch.epfl.scala:scalafix-interfaces:0.14.9"]
 package build
 
 import com.goyeau.mill.scalafix.ScalafixModule
 import mill.*
 import mill.api.ModuleRef
+import mill.javalib.JavaHomeModule
 import mill.javalib.JvmWorkerModule
 import mill.javalib.NativeImageModule
 import mill.scalalib.*
 import mill.scalalib.scalafmt.ScalafmtModule
 
 object Versions:
-  val project = "1.0.0"
-  val scala   = "3.9.0"
+  val project = "1.0.1"
+  val scala   = "3.10.0"
   // GraalVM Community for JDK 25 ships `native-image`, so one toolchain compiles, tests and links the
   // binary on every CI runner without a separate GraalVM setup step.
-  val graalvm   = "graalvm-community:25.0.2"
-  val zio       = "2.1.26"
-  val zioConfig = "4.1.0"
-  val zioHttp   = "3.11.5"
-  val zioJson   = "1.1.0"
-  val osLib     = "0.11.8"
-  val fansi     = "0.5.1"
+  val graalvm    = "25i4-25.0.4.1.1"
+  val graalvmTag = "graal-25.4.4.1.1"
+  val zio        = "2.1.26"
+  val zioConfig  = "4.1.0"
+  val zioHttp    = "3.11.6"
+  val zioJson    = "1.1.0"
+  val osLib      = "0.11.8"
+  val fansi      = "0.5.1"
 
 object Deps:
   // Scala 3.8 renamed the standard library artifact from `scala3-library_3` to `scala-library`. Some ZIO
@@ -46,14 +48,25 @@ object Deps:
   val zioTestMagnolia = mvn"dev.zio::zio-test-magnolia:${Versions.zio}".exclude(staleScalaLibrary)
 
 /** One JVM for everything: compiling, testing and `native-image`. */
-object GraalvmWorker extends JvmWorkerModule:
-  def jvmVersion = Versions.graalvm
+object GraalvmWorker extends JvmWorkerModule, JavaHomeModule:
+  // Coursier's index does not yet list the GraalVM innovation releases. A release URL still uses its
+  // managed download/extraction cache, and pins the same distribution on every supported host.
+  def jvmVersion = Task.Input:
+    val platform = (scala.util.Properties.osName, sys.props("os.arch")) match
+      case ("Linux", "amd64" | "x86_64")    => "linux-x64"
+      case ("Linux", "aarch64" | "arm64")   => "linux-aarch64"
+      case ("Mac OS X", "aarch64" | "arm64") => "macos-aarch64"
+      case (name, "amd64" | "x86_64") if name.startsWith("Windows") => "windows-x64"
+      case (name, arch) => throw IllegalArgumentException(s"GraalVM ${Versions.graalvm} does not support $name/$arch")
+    val extension = if platform == "windows-x64" then "zip" else "tar.gz"
+    s"https://github.com/graalvm/graalvm-ce-builds/releases/download/${Versions.graalvmTag}/" +
+      s"graalvm-community-jdk-${Versions.graalvm}_${platform}_bin.$extension"
 
 trait NerdFontsModule extends ScalaModule, ScalafmtModule, ScalafixModule:
   def scalaVersion = Versions.scala
   def jvmWorker    = ModuleRef(GraalvmWorker)
   // `javaHome` derives from this, and NativeImageModule locates `native-image` inside it.
-  def jvmVersion   = Versions.graalvm
+  def jvmVersion   = GraalvmWorker.jvmVersion()
 
   def scalacOptions = Seq(
     "-deprecation",
